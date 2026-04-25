@@ -36,7 +36,7 @@ const C = {
 
 /* ─── CONSTANTS & UTILS ─── */
 const COR_OPTS = ["#B8622A","#1E3A5F","#4A7A56","#C07A0A","#8C5B8C","#5B6A8C","#B83030","#2A6B6B"];
-const EMOJI_OPTS = ["🏗️","🏛️","🧱","🏠","⚡","🪣","▪️","🪟","🚪","🎨","✨","🗝️","🛠️","📐","💧","🌿","🔲","🏗"];
+const EMOJI_OPTS = ["🏗️","🏛️","🧱","🏠","⚡","🪣","▪️","🪟","🚪","🎨","✨","🗝️","🛠️","📐","💧","🌿","🔲"];
 const CAT_OPTS = ["Revestimentos","Pintura","Acabamentos","Instalações","Estrutura","Alvenaria","Cobertura","Fundação","Outros"];
 
 const INIT_IDEIA_CATS = [
@@ -224,7 +224,7 @@ export default function App() {
 
   /* ─── TAB STATE ─── */
   const [tab, setTab]         = useState("dash");
-  const [maisTab, setMaisTab] = useState("cotacoes");
+  const [maisTab, setMaisTab] = useState("docs");
   const [docTab, setDocTab]   = useState("contratos");
 
   /* ─── DATA STATE ─── */
@@ -1123,7 +1123,7 @@ export default function App() {
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:16}}>
         {[
           {label:"Lançar gasto",emoji:"💰",bg:C.pLight,action:()=>openAdd("gasto",{etapaId:etapas[0]?.id})},
-          {label:"Nova cotação",emoji:"🛒",bg:C.sLight,action:()=>{setTab("mais");setMaisTab("cotacoes");setTimeout(()=>openAdd("cotacao",{cat:CAT_OPTS[0]}),200)}},
+          {label:"Nova cotação",emoji:"🛒",bg:C.sLight,action:()=>{setTab("cotacoes");setTimeout(()=>openAdd("cotacao",{cat:CAT_OPTS[0]}),200)}},
           {label:"Anotar ideia",emoji:"💡",bg:C.wLight,action:()=>{setTab("mais");setMaisTab("ideias");setTimeout(()=>openAdd("ideia",{cat:(ideiaCats||[]).find(c=>c.ativa)?.nome||"Outros",cor:IDEIA_COLS[0],tags:[],links:[]}),200)}},
           {label:"Nova tarefa",emoji:"📋",bg:C.dLight,action:()=>{setTab("mais");setMaisTab("tarefas");setTimeout(()=>openAdd("tarefa",{done:false}),200)}},
           {label:"Nova anotação",emoji:"📝",bg:C.sLight,action:()=>{setTab("mais");setMaisTab("anotacoes");setTimeout(()=>openAdd("anotacao",{}),200)}},
@@ -1802,8 +1802,8 @@ export default function App() {
         *{box-sizing:border-box;margin:0;padding:0;}
         ::-webkit-scrollbar{display:none;}
         button,a,input,select,textarea{font-family:inherit;}
-        input[type=range]{appearance:none;height:6px;border-radius:3px;background:${C.border};outline:none;width:100%;}
-        input[type=range]::-webkit-slider-thumb{appearance:none;width:20px;height:20px;border-radius:50%;background:${C.primary};cursor:pointer;}
+        input[type=range]{appearance:none;height:6px;border-radius:3px;background:var(--border);outline:none;width:100%;}
+        input[type=range]::-webkit-slider-thumb{appearance:none;width:20px;height:20px;border-radius:50%;background:var(--primary);cursor:pointer;}
         
         /* ── RESPONSIVE LAYOUT ── */
         .app-shell { display: flex; flex-direction: column; min-height: 100vh; }
