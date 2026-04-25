@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { collection, onSnapshot, doc, setDoc, deleteDoc } from "firebase/firestore";
-import { db } from "./firebase";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { db, storage } from "./firebase";
 import html2canvas from "html2canvas";
 import {
   Home, TrendingUp, HardHat, FileText, MoreHorizontal, Plus, Phone,
@@ -80,6 +81,38 @@ const fmt = (n) => `R$ ${Math.round(n).toLocaleString("pt-BR")}`;
 const fmtK = (n) => n>=1000 ? `R$ ${(n/1000).toFixed(0)}k` : `R$ ${n}`;
 const real = (e) => (e.gastos||[]).reduce((s,g)=>s+g.valor,0);
 const pBar = (r,o) => Math.min(100, o>0 ? Math.round((r/o)*100) : 0);
+
+/* ─── FILE HELPERS ─── */
+const compressFile = async (file) => {
+  if (!file.type.startsWith("image/")) return file;
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (e) => {
+      const img = new Image();
+      img.src = e.target.result;
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const MAX_WIDTH = 1200;
+        let width = img.width, height = img.height;
+        if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; }
+        canvas.width = width; canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob((blob) => {
+          resolve(new File([blob], file.name, { type: "image/jpeg", lastModified: Date.now() }));
+        }, "image/jpeg", 0.7);
+      };
+    };
+  });
+};
+
+const uploadToStorage = async (file, folder) => {
+  const fileRef = ref(storage, `${folder}/${Date.now()}_${file.name}`);
+  const snapshot = await uploadBytes(fileRef, file);
+  const url = await getDownloadURL(snapshot.ref);
+  return { url, name: file.name, size: (file.size / 1024 / 1024).toFixed(2) + " MB" };
+};
 
 /* ─── INITIAL DATA ─── */
 const INIT_ETAPAS = [
@@ -341,6 +374,7 @@ export default function App() {
       ...d, orc:parseFloat(d.orc)||0, pct:Math.min(100,parseInt(d.pct)||0), 
       dataIniEst: d.dataIniEst || todayYM(), durEst: Math.max(1, parseInt(d.durEst) || 1),
       dataIniReal: d.dataIniReal || "", durReal: parseInt(d.durReal) || 0,
+      detalhes: d.detalhes || "",
       dep: d.dep?parseInt(d.dep):null
     };
     if(!modal.editing) { item.id = uid(); item.gastos = []; }
@@ -351,13 +385,51 @@ export default function App() {
 
   /* ─── DOCUMENT DOWNLOAD ─── */
   const downloadDoc = (f) => {
-    if (!f.file) return alert("Arquivo não encontrado.");
+    const fileUrl = f.file || f.url; // Support old base64 and new Storage URLs
+    if (!fileUrl) return alert("Arquivo não encontrado.");
     const link = document.createElement("a");
-    link.href = f.file;
-    link.download = f.nome;
+    link.href = fileUrl;
+    link.download = f.titulo || f.nome;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const [isUploading, setIsUploading] = useState(false);
+
+  const handleFileChange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setIsUploading(true);
+    try {
+      const compressed = await compressFile(file);
+      const folder = docTab === "contratos" ? "contratos" : "projetos";
+      const res = await uploadToStorage(compressed, folder);
+      setF("url", res.url);
+      setF("nome", res.name);
+      setF("tam", (file.size / 1024 / 1024).toFixed(2) + " MB");
+      setF("comp", res.size);
+    } catch (err) {
+      alert("Erro no upload: " + err.message);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleGastoFile = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setIsUploading(true);
+    try {
+      const compressed = await compressFile(file);
+      const res = await uploadToStorage(compressed, "comprovantes");
+      setF("compUrl", res.url);
+      setF("comp", res.name);
+    } catch (err) {
+      alert("Erro no upload: " + err.message);
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const [showAllPayments, setShowAllPayments] = useState(false);
@@ -367,7 +439,7 @@ export default function App() {
     const etId = parseInt(d.etapaId);
     let v = parseFloat(d.valor)||0, pagador = d.pagador || 'G', vG = 0, vL = 0;
     if(pagador === 'G') vG = v; else if(pagador === 'L') vL = v; else { vG = parseFloat(d.valorG)||(v/2); vL = parseFloat(d.valorL)||(v/2); v = vG + vL; }
-    const g = { id:d.id||uid(), desc:d.desc, valor:v, valorG:vG, valorL:vL, pagador, data:d.data||today(), recebedor:d.recebedor||"", tags:d.tags||"", obs:d.obs||"", comp:d.comp||"" };
+    const g = { id:d.id||uid(), desc:d.desc, valor:v, valorG:vG, valorL:vL, pagador, data:d.data||today(), recebedor:d.recebedor||"", tags:d.tags||"", obs:d.obs||"", comp:d.comp||"", compUrl:d.compUrl||"" };
     
     if (etId === 999) {
       await setDoc(doc(db, "outrosGastos", g.id.toString()), g);
@@ -531,6 +603,7 @@ export default function App() {
         <FInput label="Nome da etapa" value={d.nome} onChange={v=>setF("nome",v)} required/>
         <div style={{marginBottom:14}}><p style={{fontSize:12,fontWeight:700,color:C.muted,marginBottom:8}}>Emoji</p><div style={{display:"flex",flexWrap:"wrap",gap:8}}>{EMOJI_OPTS.map(em=>(<button key={em} onClick={()=>setF("emoji",em)} style={{width:42,height:42,borderRadius:10,border:`2px solid ${d.emoji===em?C.primary:C.border}`,background:d.emoji===em?C.pLight:"transparent",fontSize:20,cursor:"pointer"}}>{em}</button>))}</div></div>
         <FInput label="Orçamento (R$)" type="number" value={d.orc} onChange={v=>setF("orc",v)}/>
+        <FTextarea label="Detalhes (O que está previsto/incluso?)" value={d.detalhes} onChange={v=>setF("detalhes",v)} rows={4} placeholder="Ex: Piso porcelanato retificado, reboco interno, etc."/>
         <div style={{marginBottom:14}}><p style={{fontSize:12,fontWeight:700,color:C.muted,marginBottom:6}}>Conclusão: <strong style={{color:C.primary}}>{d.pct||0}%</strong></p><input type="range" min={0} max={100} value={d.pct||0} onChange={e=>setF("pct",e.target.value)} style={{width:"100%",accentColor:C.primary}}/></div>
         <FSelect label="Status" value={d.st||"wait"} onChange={v=>setF("st",v)} options={ST_OPTS}/>
         
@@ -579,12 +652,16 @@ export default function App() {
           {d.comp ? (
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:C.sLight,padding:"10px 14px",borderRadius:10}}>
               <div style={{display:"flex",alignItems:"center",gap:6}}><FileText size={16} color={C.success}/><p style={{fontSize:13,color:C.success,fontWeight:700}}>{d.comp}</p></div>
-              <button onClick={()=>setF("comp","")} style={{background:"none",border:"none",color:C.danger,fontWeight:700,cursor:"pointer"}}>Remover</button>
+              <button onClick={()=>{setF("comp",""); setF("compUrl","");}} style={{background:"none",border:"none",color:C.danger,fontWeight:700,cursor:"pointer"}}>Remover</button>
             </div>
           ) : (
-            <button onClick={()=>{ const nome = prompt("Anexar: digite o nome do arquivo (ex: comprovante.pdf):"); if(nome) setF("comp", nome.includes(".")?nome:nome+".pdf"); }} style={{width:"100%",padding:12,borderRadius:10,border:`1.5px dashed ${C.border}`,background:C.bg,color:C.text,fontSize:14,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
-              <Upload size={16}/> Anexar Arquivo
-            </button>
+            <>
+              <input type="file" id="comp-upload" style={{display:"none"}} onChange={handleGastoFile} />
+              <label htmlFor="comp-upload" style={{width:"100%",padding:12,borderRadius:10,border:`1.5px dashed ${C.border}`,background:C.bg,color:C.text,fontSize:14,fontWeight:600,cursor:"pointer",display:isUploading?"none":"flex",alignItems:"center",justifyContent:"center",gap:8,fontFamily:"inherit"}}>
+                <Upload size={16}/> {isUploading ? "Enviando..." : "Anexar Comprovante"}
+              </label>
+              {isUploading && <p style={{fontSize:12, color:C.primary, textAlign:"center", marginTop:4}}>Processando arquivo...</p>}
+            </>
           )}
         </div>
         <Btn label="Salvar Pagamento" onClick={saveGasto}/>
@@ -608,35 +685,22 @@ export default function App() {
     );
 
     if(type==="doc") {
-      const handleFileChange = (e) => {
-         const file = e.target.files[0];
-         if (!file) return;
-         const originalMB = file.size ? (file.size / (1024 * 1024)).toFixed(2) : (Math.random()*8 + 1).toFixed(1);
-         const compressedMB = (parseFloat(originalMB) * 0.25).toFixed(2); 
-         setF("nome", file.name);
-         setF("tam", `${originalMB} MB`);
-         setF("comp", `${compressedMB} MB`);
-      };
-
       return (
         <Sheet title={editing?"Editar Documento":"Novo Documento"} onClose={closeModal}>
+          <FInput label="Título do documento (Identificação)" value={d.titulo} onChange={v=>setF("titulo",v)} placeholder="Ex: Contrato Pedreiro, Planta Hidráulica..."/>
           {d.nome ? (
              <div style={{background:C.sLight, border:`1.5px solid var(--success)`, padding:"16px", borderRadius:12, marginBottom:16, textAlign:"center"}}>
                 <FileText size={32} color={C.success} style={{marginBottom:8, margin:"0 auto"}}/>
                 <p style={{fontSize:15, fontWeight:800, color:C.text, marginBottom:4, wordBreak:"break-all"}}>{d.nome}</p>
-                <div style={{display:"flex", justifyContent:"center", gap:12, marginTop:8}}>
-                   <div><p style={{fontSize:10, color:C.muted}}>Tamanho original</p><p style={{fontSize:13, fontWeight:700, color:C.text, textDecoration:"line-through"}}>{d.tam}</p></div>
-                   <div style={{width:1, background:C.success, opacity:0.3}}/>
-                   <div><p style={{fontSize:10, color:C.success, fontWeight:800}}>Tamanho Comprimido</p><p style={{fontSize:15, fontWeight:800, color:C.success}}>✦ {d.comp}</p></div>
-                </div>
-                <button onClick={()=>{setF("nome","");setF("tam","");setF("comp","");}} style={{marginTop:12, background:"transparent", border:`1px solid var(--danger)`, opacity:0.5, color:C.danger, padding:"4px 12px", borderRadius:6, fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"inherit"}}>Remover anexo</button>
+                <button onClick={()=>{setF("nome","");setF("url","");}} style={{marginTop:12, background:"transparent", border:`1px solid var(--danger)`, opacity:0.5, color:C.danger, padding:"4px 12px", borderRadius:6, fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"inherit"}}>Remover anexo</button>
              </div>
           ) : (
              <div style={{marginBottom:20}}>
                <input type="file" id="doc-upload" style={{display:"none"}} onChange={handleFileChange} />
-               <label htmlFor="doc-upload" style={{width:"100%",padding:20,borderRadius:12,border:`2px dashed var(--primary)`, opacity:0.6, background:C.pLight,color:C.primary,fontSize:14,fontWeight:800,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:8,fontFamily:"inherit"}}>
-                 <Upload size={24}/> Selecionar Arquivo
+               <label htmlFor="doc-upload" style={{width:"100%",padding:20,borderRadius:12,border:`2px dashed var(--primary)`, opacity:0.6, background:C.pLight,color:C.primary,fontSize:14,fontWeight:800,cursor:"pointer",flexDirection:"column",alignItems:"center",gap:8,fontFamily:"inherit", display:isUploading?"none":"flex"}}>
+                 <Upload size={24}/> {isUploading ? "Enviando..." : "Selecionar Arquivo"}
                </label>
+               {isUploading && <p style={{fontSize:12, color:C.primary, textAlign:"center", marginTop:8}}>Processando e comprimindo...</p>}
                <p style={{fontSize:11, color:C.muted, textAlign:"center", marginTop:8}}>O sistema irá reduzir o arquivo automaticamente ao fazer o upload.</p>
              </div>
           )}
@@ -1121,7 +1185,7 @@ export default function App() {
               </>
            ) : (
               <div style={{background:C.bg, borderRadius:12, padding:12}}>
-                 <p style={{fontSize:12, fontWeight:700, color:C.muted, marginBottom:10}}>TODOS OS LANÇAMENTOS ({etapas.reduce((s,e)=>s+realCount(e),0) + outrosGastos.length})</p>
+                 <p style={{fontSize:12, fontWeight:700, color:C.muted, marginBottom:10}}>TODOS OS LANÇAMENTOS ({etapas.reduce((s,e)=>s+(e.gastos?.length||0),0) + outrosGastos.length})</p>
                  <div style={{maxHeight:400, overflowY:"auto"}}>
                     {[...etapas.flatMap(e=>e.gastos.map(g=>({...g, etapaNome:e.nome, emoji:e.emoji}))), ...outrosGastos.map(g=>({...g, etapaNome:"Outros", emoji:"🧾"}))]
                       .sort((a,b)=> new Date(b.data.split("/").reverse().join("-")) - new Date(a.data.split("/").reverse().join("-")))
@@ -1270,6 +1334,9 @@ export default function App() {
                       </p>
                     </div>
                   </div>
+                  {e.detalhes && (
+                    <p style={{fontSize:12, color:C.muted, marginTop:8, fontStyle:"italic", lineHeight:1.4, padding:"10px", background:C.bg, borderRadius:10, marginBottom:10}}>{e.detalhes}</p>
+                  )}
                   {depEtapa && (<div style={{background:C.pLight,borderRadius:8,padding:"8px 12px",display:"flex",alignItems:"center",gap:8}}><ArrowRight size={14} color={C.primary}/><p style={{fontSize:12,color:C.text}}><strong>Depende de:</strong> {depEtapa.emoji} {depEtapa.nome} {depEtapa.st==="ok" && <span style={{color:C.success,fontWeight:700}}> ✓ Concluída</span>}</p></div>)}
                 </div>
               )}
@@ -1466,11 +1533,12 @@ export default function App() {
 
     return (
       <div style={{padding:"0 16px 16px"}}>
-        <button onClick={()=>openAdd("cotacao",{cat:CAT_OPTS[0], st:"aberta"})} style={{width:"100%",padding:14,borderRadius:12,border:`2px dashed var(--primary)`, opacity:0.8, background:"transparent",cursor:"pointer",color:C.primary,fontSize:14,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginTop:4,marginBottom:16,fontFamily:"inherit"}}><Plus size={18}/> Nova cotação</button>
         <Card style={{background:C.sLight,marginBottom:12,padding:"12px 14px"}}>
           <p style={{fontSize:13,fontWeight:700,color:C.success,marginBottom:2}}>💡 Compare antes de decidir</p>
           <p style={{fontSize:12,color:C.text}}>Adicione orçamentos de diferentes fornecedores e veja o melhor preço destacado.</p>
         </Card>
+        
+        <button onClick={()=>openAdd("cotacao",{cat:CAT_OPTS[0], st:"aberta"})} style={{width:"100%",padding:14,borderRadius:12,border:`2px dashed var(--primary)`, opacity:0.8, background:"transparent",cursor:"pointer",color:C.primary,fontSize:14,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginTop:4,marginBottom:16,fontFamily:"inherit"}}><Plus size={18}/> Nova cotação</button>
         
         {abertas.map(q => renderCotacaoCard(q))}
         {abertas.length === 0 && <p style={{textAlign:"center", color:C.muted, margin:"20px 0"}}>Nenhuma cotação em aberto.</p>}
@@ -1576,15 +1644,54 @@ export default function App() {
     );
   };
 
+  const renderDocs = () => {
+    const list = docTab === "contratos" ? contratos : projetos;
+    return (
+       <div style={{padding:"0 16px 16px"}}>
+         <div style={{display:"flex", background:C.border, borderRadius:12, padding:4, marginBottom:16}}>
+           <button onClick={()=>setDocTab("contratos")} style={{flex:1, padding:8, borderRadius:8, border:"none", background:docTab==="contratos"?C.card:"transparent", color:docTab==="contratos"?C.primary:C.muted, fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:"inherit"}}>Contratos</button>
+           <button onClick={()=>setDocTab("projetos")} style={{flex:1, padding:8, borderRadius:8, border:"none", background:docTab==="projetos"?C.card:"transparent", color:docTab==="projetos"?C.primary:C.muted, fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:"inherit"}}>Projetos</button>
+         </div>
+
+         <button onClick={()=>openAdd("doc",{data:todayFmt()})} style={{width:"100%",padding:14,borderRadius:12,border:`2px dashed var(--primary)`, opacity:0.8, background:"transparent",cursor:"pointer",color:C.primary,fontSize:14,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginBottom:16,fontFamily:"inherit"}}><Plus size={18}/> Novo {docTab==="contratos"?"contrato":"projeto"}</button>
+
+         <div style={{display:"grid", gridTemplateColumns:"1fr", gap:10}}>
+           {list.map(f => (
+             <Card key={f.id} style={{padding:"12px 14px", borderLeft:docTab==="contratos"?`4px solid ${f.ok?C.success:C.warning}`:`4px solid ${C.secondary}`}}>
+                <div style={{display:"flex", alignItems:"center", gap:12}}>
+                   <div style={{width:42, height:42, borderRadius:10, background:C.bg, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0}}><FileText size={20} color={C.muted}/></div>
+                   <div style={{flex:1, paddingRight:10}}>
+                      <p style={{fontSize:14, fontWeight:800, color:C.text, marginBottom:4}}>{f.titulo || f.nome}</p>
+                      {f.titulo && <p style={{fontSize:11, color:C.muted, marginBottom:4}}>Arquivo: {f.nome}</p>}
+                      <p style={{fontSize:11, color:C.muted}}>Enviado em {f.data} • {f.comp || f.tam}</p>
+                   </div>
+                   <div style={{display:"flex", gap:6, alignItems:"center"}}>
+                      {docTab==="contratos" && (
+                         <button onClick={()=>toggleSigned(f.id)} style={{background:"none", border:"none", cursor:"pointer", padding:4}} title={f.ok?"Assinado":"Pendente"}>{f.ok?<CheckSquare size={18} color={C.success}/>:<Square size={18} color={C.muted}/>}</button>
+                      )}
+                      <SmBtn onClick={()=>downloadDoc(f)} bg={C.bg}><Download size={15} color={C.primary}/></SmBtn>
+                      <SmBtn onClick={()=>openEdit("doc",f)} bg={C.bg}><Edit2 size={13} color={C.muted}/></SmBtn>
+                   </div>
+                </div>
+             </Card>
+           ))}
+           {list.length === 0 && <p style={{textAlign:"center", color:C.muted, margin:"20px 0"}}>Nenhum documento anexado.</p>}
+         </div>
+       </div>
+    );
+  };
+
   const renderContatos = () => {
     const filtered = contatos.filter(c=> c.nome.toLowerCase().includes(searchCon.toLowerCase()) || c.papel.toLowerCase().includes(searchCon.toLowerCase()) );
     return (
       <div style={{padding:"0 16px 16px"}}>
-        <button onClick={()=>openAdd("contato",{cor:COR_OPTS[0], prestou:false, nota:0})} style={{width:"100%",padding:14,borderRadius:12,border:`2px dashed var(--primary)`, opacity:0.8, background:"transparent",cursor:"pointer",color:C.primary,fontSize:14,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginTop:4,marginBottom:14,fontFamily:"inherit"}}><Plus size={18}/> Novo contato</button>
-        <div style={{display:"flex",alignItems:"center",gap:10,background:C.card,borderRadius:12,padding:"10px 14px",marginBottom:14,border:`1px solid ${C.border}`}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,background:C.card,borderRadius:12,padding:"10px 14px",marginBottom:14,border:`1px solid ${C.border}`,boxShadow:"0 1px 4px rgba(0,0,0,0.03)"}}>
           <Search size={16} color={C.muted}/>
-          <input value={searchCon} onChange={e=>setSearchCon(e.target.value)} placeholder="Buscar contato..." style={{border:"none",outline:"none",fontSize:14,color:C.text,background:"transparent",flex:1,fontFamily:"inherit"}}/>
+          <input value={searchCon} onChange={e=>setSearchCon(e.target.value)} placeholder="Pesquisar contatos..." style={{border:"none",outline:"none",fontSize:14,color:C.text,background:"transparent",flex:1,fontFamily:"inherit"}}/>
+          {searchCon && <button onClick={()=>setSearchCon("")} style={{background:"none",border:"none",padding:4,cursor:"pointer"}}><X size={16} color={C.muted}/></button>}
         </div>
+
+        <button onClick={()=>openAdd("contato",{cor:COR_OPTS[0], prestou:false, nota:0})} style={{width:"100%",padding:14,borderRadius:12,border:`2px dashed var(--primary)`, opacity:0.8, background:"transparent",cursor:"pointer",color:C.primary,fontSize:14,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginTop:4,marginBottom:14,fontFamily:"inherit"}}><Plus size={18}/> Novo contato</button>
         {filtered.map(c=>(
           <Card key={c.id} style={{marginBottom:10,padding:14}}>
             <div style={{display:"flex",alignItems:"center",gap:12}}>
