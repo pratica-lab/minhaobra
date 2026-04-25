@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { collection, onSnapshot, doc, setDoc, deleteDoc } from "firebase/firestore";
+import { collection, onSnapshot, doc, setDoc, deleteDoc, writeBatch } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "./firebase";
 import html2canvas from "html2canvas";
@@ -244,7 +244,11 @@ export default function App() {
   useEffect(() => {
     const unsubEtapas = onSnapshot(collection(db, "etapas"), snapshot => {
       const list = snapshot.docs.map(d=>({id:isNaN(d.id)?d.id:Number(d.id), ...d.data()}));
-      setEtapas(list.sort((a,b) => (a.ordem ?? 0) - (b.ordem ?? 0)));
+      setEtapas(list.sort((a,b) => {
+        const diff = (a.ordem ?? 0) - (b.ordem ?? 0);
+        if (diff !== 0) return diff;
+        return (a.id < b.id ? -1 : 1);
+      }));
     });
     const unsubOutros = onSnapshot(collection(db, "outrosGastos"), snapshot => setOutrosGastos(snapshot.docs.map(d=>({id:isNaN(d.id)?d.id:Number(d.id), ...d.data()}))));
     const unsubCheck = onSnapshot(collection(db, "checklist"), snapshot => setChecklist(snapshot.docs.map(d=>({id:isNaN(d.id)?d.id:Number(d.id), ...d.data()}))));
@@ -388,18 +392,29 @@ export default function App() {
   };
 
   const moveEtapa = async (id, delta) => {
-    const idx = etapas.findIndex(e => e.id === id);
+    if (isUploading) return; // Reusing isUploading as a general "busy" lock
+    const idx = etapas.findIndex(e => String(e.id) === String(id));
     const newIdx = idx + delta;
     if (newIdx < 0 || newIdx >= etapas.length) return;
 
     const current = etapas[idx];
     const neighbor = etapas[newIdx];
-
+    
+    // Ensure both have valid order values for swapping
     const currentOrder = current.ordem ?? idx;
     const neighborOrder = neighbor.ordem ?? newIdx;
 
-    await setDoc(doc(db, "etapas", current.id.toString()), { ...current, ordem: neighborOrder });
-    await setDoc(doc(db, "etapas", neighbor.id.toString()), { ...neighbor, ordem: currentOrder });
+    setIsUploading(true);
+    try {
+      const batch = writeBatch(db);
+      batch.update(doc(db, "etapas", current.id.toString()), { ordem: neighborOrder });
+      batch.update(doc(db, "etapas", neighbor.id.toString()), { ordem: currentOrder });
+      await batch.commit();
+    } catch (err) {
+      console.error("Erro ao mover:", err);
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const deleteEtapa = async () => { await deleteDoc(doc(db, "etapas", d.id.toString())); logChange(`Excluiu a etapa "${d.nome}"`); closeModal(); };
@@ -1341,9 +1356,9 @@ export default function App() {
                 </div>
                 <div style={{display:"flex",alignItems:"center",gap:8}}>
                   {isSorting && (
-                    <div style={{display:"flex", gap:4, marginRight:4}}>
-                      <button onClick={ev=>{ev.stopPropagation();moveEtapa(e.id,-1);}} disabled={idx===0} style={{width:30,height:30,borderRadius:8,border:`1px solid ${C.border}`,background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",opacity:idx===0?0.3:1}}><ArrowUp size={14} color={C.primary}/></button>
-                      <button onClick={ev=>{ev.stopPropagation();moveEtapa(e.id,1);}} disabled={idx===etapas.length-1} style={{width:30,height:30,borderRadius:8,border:`1px solid ${C.border}`,background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",opacity:idx===etapas.length-1?0.3:1}}><ArrowDown size={14} color={C.primary}/></button>
+                    <div style={{display:"flex", gap:4, marginRight:4, opacity:isUploading?0.5:1, pointerEvents:isUploading?"none":"auto"}}>
+                      <button onClick={ev=>{ev.stopPropagation();moveEtapa(e.id,-1);}} disabled={idx===0 || isUploading} style={{width:30,height:30,borderRadius:8,border:`1px solid ${C.border}`,background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",opacity:idx===0?0.3:1}}><ArrowUp size={14} color={C.primary}/></button>
+                      <button onClick={ev=>{ev.stopPropagation();moveEtapa(e.id,1);}} disabled={idx===etapas.length-1 || isUploading} style={{width:30,height:30,borderRadius:8,border:`1px solid ${C.border}`,background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",opacity:idx===etapas.length-1?0.3:1}}><ArrowDown size={14} color={C.primary}/></button>
                     </div>
                   )}
                   <p style={{fontSize:16,fontWeight:800,color:e.st==="ok"?C.success:e.st==="run"?C.primary:C.muted}}>{e.pct}%</p>
