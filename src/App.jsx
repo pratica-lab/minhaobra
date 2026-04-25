@@ -392,26 +392,27 @@ export default function App() {
   };
 
   const moveEtapa = async (id, delta) => {
-    if (isUploading) return; // Reusing isUploading as a general "busy" lock
-    const idx = etapas.findIndex(e => String(e.id) === String(id));
+    if (isUploading) return;
+    const newList = [...etapas];
+    const idx = newList.findIndex(e => String(e.id) === String(id));
     const newIdx = idx + delta;
-    if (newIdx < 0 || newIdx >= etapas.length) return;
+    if (newIdx < 0 || newIdx >= newList.length) return;
 
-    const current = etapas[idx];
-    const neighbor = etapas[newIdx];
-    
-    // Ensure both have valid order values for swapping
-    const currentOrder = current.ordem ?? idx;
-    const neighborOrder = neighbor.ordem ?? newIdx;
+    // Swapping elements in the local array
+    const [movedItem] = newList.splice(idx, 1);
+    newList.splice(newIdx, 0, movedItem);
 
     setIsUploading(true);
     try {
       const batch = writeBatch(db);
-      batch.update(doc(db, "etapas", current.id.toString()), { ordem: neighborOrder });
-      batch.update(doc(db, "etapas", neighbor.id.toString()), { ordem: currentOrder });
+      // Normalize all orders based on the new array position
+      newList.forEach((item, i) => {
+        batch.update(doc(db, "etapas", item.id.toString()), { ordem: i });
+      });
       await batch.commit();
     } catch (err) {
-      console.error("Erro ao mover:", err);
+      console.error("Erro ao reorganizar:", err);
+      alert("Erro ao salvar nova ordem.");
     } finally {
       setIsUploading(false);
     }
