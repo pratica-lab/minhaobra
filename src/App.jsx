@@ -86,27 +86,44 @@ const pBar = (r,o) => Math.min(100, o>0 ? Math.round((r/o)*100) : 0);
 const compressFile = async (file) => {
   if (!file.type.startsWith("image/")) return file;
   return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onerror = () => resolve(file);
-    reader.onload = (e) => {
-      const img = new Image();
-      img.onerror = () => resolve(file);
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        const MAX_WIDTH = 1200;
-        let width = img.width, height = img.height;
-        if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; }
-        canvas.width = width; canvas.height = height;
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0, width, height);
-        canvas.toBlob((blob) => {
-          if (!blob) return resolve(file);
-          resolve(new File([blob], file.name, { type: "image/jpeg", lastModified: Date.now() }));
-        }, "image/jpeg", 0.7);
+    // Safety timeout: if compression takes > 10s, return original file
+    const timeout = setTimeout(() => {
+      console.warn("Compression timeout");
+      resolve(file);
+    }, 10000);
+
+    try {
+      const reader = new FileReader();
+      reader.onerror = () => { clearTimeout(timeout); resolve(file); };
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onerror = () => { clearTimeout(timeout); resolve(file); };
+        img.onload = () => {
+          try {
+            const canvas = document.createElement("canvas");
+            const MAX_WIDTH = 1200;
+            let width = img.width, height = img.height;
+            if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; }
+            canvas.width = width; canvas.height = height;
+            const ctx = canvas.getContext("2d");
+            ctx.drawImage(img, 0, 0, width, height);
+            canvas.toBlob((blob) => {
+              clearTimeout(timeout);
+              if (!blob) return resolve(file);
+              resolve(new File([blob], file.name, { type: "image/jpeg", lastModified: Date.now() }));
+            }, "image/jpeg", 0.7);
+          } catch (e) {
+            clearTimeout(timeout);
+            resolve(file);
+          }
+        };
+        img.src = e.target.result;
       };
-      img.src = e.target.result;
-    };
-    reader.readAsDataURL(file);
+      reader.readAsDataURL(file);
+    } catch (e) {
+      clearTimeout(timeout);
+      resolve(file);
+    }
   });
 };
 
@@ -360,7 +377,7 @@ export default function App() {
   /* ─── MODAL HELPERS ─── */
   const openAdd  = (type, defaults={}, parentId=null) => setModal({type,data:{...defaults},parentId,editing:false});
   const openEdit = (type, item, parentId=null)        => setModal({type,data:{...item},parentId,editing:true});
-  const closeModal = () => setModal(null);
+  const closeModal = () => { setModal(null); setIsUploading(false); };
   const setF = (f,v) => setModal(m=>({...m,data:{...m.data,[f]:v}}));
   const d = modal?.data || {};
 
