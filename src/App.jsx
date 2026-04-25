@@ -50,8 +50,7 @@ const URG_OPTS = [{value:"alta",label:"🔴 Urgente"},{value:"media",label:"🟡
 const ST_OPTS = [{value:"ok",label:"✅ Concluída"},{value:"run",label:"🔄 Em andamento"},{value:"wait",label:"⏳ Pendente"}];
 
 /* ─── ID GENERATOR & DATES ─── */
-let _id = 2000;
-const uid = () => ++_id;
+const uid = () => Date.now();
 const today = () => new Date().toISOString().split("T")[0];
 const todayFmt = () => new Date().toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"});
 const initials = (n="") => n.split(" ").slice(0,2).map(w=>w[0]||"").join("").toUpperCase();
@@ -349,6 +348,19 @@ export default function App() {
     logChange(modal.editing ? `Editou a etapa "${item.nome}"` : `Criou a etapa "${item.nome}"`); closeModal();
   };
   const deleteEtapa = async () => { await deleteDoc(doc(db, "etapas", d.id.toString())); logChange(`Excluiu a etapa "${d.nome}"`); closeModal(); };
+
+  /* ─── DOCUMENT DOWNLOAD ─── */
+  const downloadDoc = (f) => {
+    if (!f.file) return alert("Arquivo não encontrado.");
+    const link = document.createElement("a");
+    link.href = f.file;
+    link.download = f.nome;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const [showAllPayments, setShowAllPayments] = useState(false);
 
   const saveGasto = async () => {
     if(!d.desc?.trim()||!d.valor) return alert("Descrição e valor são obrigatórios");
@@ -1090,15 +1102,44 @@ export default function App() {
     
     return (
       <div style={{padding:"0 16px 16px"}}>
-        <button onClick={()=>openAdd("gasto",{etapaId:etapas[0]?.id})} style={{width:"100%",padding:13,borderRadius:12,border:"none",background:C.primary,color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginBottom:14,fontFamily:"inherit"}}><Plus size={16}/> Lançar novo pagamento</button>
-        <Card style={{textAlign:"center",marginBottom:12}}>
-          <p style={{fontSize:12,color:C.muted,fontWeight:600,marginBottom:4}}>TOTAL REALIZADO</p>
-          <p style={{fontSize:36,fontWeight:900,color:C.text,letterSpacing:-1}}>{fmt(totalReal)}</p>
-          <p style={{fontSize:14,color:C.muted,marginBottom:12}}>orçamento global: {fmt(totalOrc)}</p>
-          <div style={{background:C.border,borderRadius:8,height:10,overflow:"hidden",marginBottom:6}}><div style={{width:`${pctGasto}%`,height:"100%",background:pctGasto>90?C.danger:C.primary,borderRadius:8}}/></div>
-          <div style={{display:"flex",justifyContent:"space-between"}}><p style={{fontSize:12,color:C.muted}}>{pctGasto}% do orçamento</p><p style={{fontSize:12,fontWeight:700,color:C.success}}>{fmt(totalOrc-totalReal)} disponíveis</p></div>
+        <Card style={{background:C.card, padding:14, marginBottom:16}}>
+           <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14}}>
+              <STitle style={{marginBottom:0}}>Resumo de Gastos</STitle>
+              <button onClick={()=>setShowAllPayments(!showAllPayments)} style={{padding:"6px 12px", borderRadius:8, border:`1px solid ${C.border}`, background:showAllPayments?C.pLight:C.bg, color:showAllPayments?C.primary:C.muted, fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit"}}>
+                 {showAllPayments ? "Ver por etapas" : "Ver todos pagamentos"}
+              </button>
+           </div>
+           
+           {!showAllPayments ? (
+              <>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:6}}>
+                  <p style={{fontSize:28,fontWeight:900,color:C.text}}>{fmt(totalReal)}</p>
+                  <p style={{fontSize:13,fontWeight:700,color:C.muted}}>de {fmt(totalOrc)}</p>
+                </div>
+                <div style={{background:C.border,borderRadius:8,height:10,overflow:"hidden",marginBottom:6}}><div style={{width:`${pctGasto}%`,height:"100%",background:pctGasto>90?C.danger:C.primary,borderRadius:8}}/></div>
+                <div style={{display:"flex",justifyContent:"space-between"}}><p style={{fontSize:12,color:C.muted}}>{pctGasto}% do orçamento</p><p style={{fontSize:12,fontWeight:700,color:C.success}}>{fmt(totalOrc-totalReal)} disponíveis</p></div>
+              </>
+           ) : (
+              <div style={{background:C.bg, borderRadius:12, padding:12}}>
+                 <p style={{fontSize:12, fontWeight:700, color:C.muted, marginBottom:10}}>TODOS OS LANÇAMENTOS ({etapas.reduce((s,e)=>s+realCount(e),0) + outrosGastos.length})</p>
+                 <div style={{maxHeight:400, overflowY:"auto"}}>
+                    {[...etapas.flatMap(e=>e.gastos.map(g=>({...g, etapaNome:e.nome, emoji:e.emoji}))), ...outrosGastos.map(g=>({...g, etapaNome:"Outros", emoji:"🧾"}))]
+                      .sort((a,b)=> new Date(b.data.split("/").reverse().join("-")) - new Date(a.data.split("/").reverse().join("-")))
+                      .map(g => (
+                        <div key={g.id} style={{display:"flex", justifyContent:"space-between", alignItems:"center", padding:"8px 0", borderBottom:`1px solid ${C.border}`}}>
+                           <div style={{flex:1, paddingRight:10}}>
+                              <p style={{fontSize:13, fontWeight:700, color:C.text}}>{g.desc}</p>
+                              <p style={{fontSize:11, color:C.muted}}>{g.emoji} {g.etapaNome} • {g.data}</p>
+                           </div>
+                           <p style={{fontSize:14, fontWeight:800, color:C.primary}}>{fmt(g.valor)}</p>
+                        </div>
+                      ))
+                    }
+                 </div>
+              </div>
+           )}
         </Card>
-        
+
         <Card style={{marginBottom:12, padding:"14px 16px", border:`1px solid var(--primary)`, opacity:0.9}}>
           <div style={{display:"flex", alignItems:"center", gap:8, marginBottom:10}}><Users size={18} color={C.primary}/><p style={{fontSize:13, fontWeight:800, color:C.text}}>Acerto de Contas</p></div>
           <div style={{display:"flex", justifyContent:"space-between", marginBottom:12}}>
@@ -1124,6 +1165,7 @@ export default function App() {
           </Card>
         ) : (
           <>
+            <button onClick={()=>openAdd("gasto",{etapaId:etapas[0]?.id})} style={{width:"100%",padding:13,borderRadius:12,border:"none",background:C.primary,color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginBottom:16,fontFamily:"inherit"}}><Plus size={16}/> Lançar novo pagamento</button>
             <STitle>Orçado × Realizado por etapa</STitle>
             {etapas.map(e=>{
               const r=real(e); const over=r>e.orc&&r>0; const pct=pBar(r,e.orc);
@@ -1307,6 +1349,7 @@ export default function App() {
         <div style={{display:"flex",background:C.border,borderRadius:12,padding:4,marginBottom:14}}>
           {[["contratos","📄 Contratos"],["projetos","📐 Projetos"]].map(([k,l])=>( <button key={k} onClick={()=>setDocTab(k)} style={{flex:1,padding:"8px 0",borderRadius:9,border:"none",cursor:"pointer",background:docTab===k?C.card:"transparent",color:docTab===k?C.primary:C.muted,fontSize:13,fontWeight:700,boxShadow:docTab===k?"0 1px 4px rgba(0,0,0,0.08)":"none",fontFamily:"inherit"}}>{l}</button> ))}
         </div>
+        <button onClick={()=>openAdd("doc",{ok:false})} style={{width:"100%",padding:14,borderRadius:12,border:`2px dashed var(--primary)`, opacity:0.8, background:"transparent",cursor:"pointer",color:C.primary,fontSize:14,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginTop:4,marginBottom:14,fontFamily:"inherit"}}><Upload size={18}/> Novo documento</button>
         {list.map(f=>(
           <Card key={f.id} style={{marginBottom:8,padding:"12px 14px"}}>
             <div style={{display:"flex",alignItems:"flex-start",gap:12}}>
@@ -1320,11 +1363,10 @@ export default function App() {
                 <p style={{fontSize:11,color:C.muted,marginTop:2}}>{f.data}</p>
                 {docTab==="contratos" && ( <button onClick={()=>toggleSigned(f.id)} style={{marginTop:6,background:"none",border:"none",cursor:"pointer",padding:0,fontFamily:"inherit"}}><Badge label={f.ok?"✓ Assinado":"⏳ Marcar como assinado"} color={f.ok?C.success:C.warning} bg={f.ok?C.sLight:C.wLight}/></button> )}
               </div>
-              <div style={{display:"flex",gap:6}}><SmBtn onClick={()=>openEdit("doc",f)} bg={C.bg}><Edit2 size={15} color={C.muted}/></SmBtn><SmBtn onClick={()=>{}} bg={C.primary}><Download size={15} color="#fff"/></SmBtn></div>
+              <div style={{display:"flex",gap:6}}><SmBtn onClick={()=>openEdit("doc",f)} bg={C.bg}><Edit2 size={15} color={C.muted}/></SmBtn><SmBtn onClick={()=>downloadDoc(f)} bg={C.primary}><Download size={15} color="#fff"/></SmBtn></div>
             </div>
           </Card>
         ))}
-        <button onClick={()=>openAdd("doc",{ok:false})} style={{width:"100%",padding:14,borderRadius:12,border:`2px dashed var(--primary)`, opacity:0.8, background:"transparent",cursor:"pointer",color:C.primary,fontSize:14,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginTop:4,fontFamily:"inherit"}}><Upload size={18}/> Novo documento</button>
       </div>
     );
   };
@@ -1424,6 +1466,7 @@ export default function App() {
 
     return (
       <div style={{padding:"0 16px 16px"}}>
+        <button onClick={()=>openAdd("cotacao",{cat:CAT_OPTS[0], st:"aberta"})} style={{width:"100%",padding:14,borderRadius:12,border:`2px dashed var(--primary)`, opacity:0.8, background:"transparent",cursor:"pointer",color:C.primary,fontSize:14,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginTop:4,marginBottom:16,fontFamily:"inherit"}}><Plus size={18}/> Nova cotação</button>
         <Card style={{background:C.sLight,marginBottom:12,padding:"12px 14px"}}>
           <p style={{fontSize:13,fontWeight:700,color:C.success,marginBottom:2}}>💡 Compare antes de decidir</p>
           <p style={{fontSize:12,color:C.text}}>Adicione orçamentos de diferentes fornecedores e veja o melhor preço destacado.</p>
@@ -1432,7 +1475,6 @@ export default function App() {
         {abertas.map(q => renderCotacaoCard(q))}
         {abertas.length === 0 && <p style={{textAlign:"center", color:C.muted, margin:"20px 0"}}>Nenhuma cotação em aberto.</p>}
 
-        <button onClick={()=>openAdd("cotacao",{cat:CAT_OPTS[0], st:"aberta"})} style={{width:"100%",padding:14,borderRadius:12,border:`2px dashed var(--primary)`, opacity:0.8, background:"transparent",cursor:"pointer",color:C.primary,fontSize:14,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginTop:4,marginBottom:16,fontFamily:"inherit"}}><Plus size={18}/> Nova cotação</button>
 
         {concluidas.length > 0 && (
            <div style={{marginTop:20}}>
@@ -1538,6 +1580,7 @@ export default function App() {
     const filtered = contatos.filter(c=> c.nome.toLowerCase().includes(searchCon.toLowerCase()) || c.papel.toLowerCase().includes(searchCon.toLowerCase()) );
     return (
       <div style={{padding:"0 16px 16px"}}>
+        <button onClick={()=>openAdd("contato",{cor:COR_OPTS[0], prestou:false, nota:0})} style={{width:"100%",padding:14,borderRadius:12,border:`2px dashed var(--primary)`, opacity:0.8, background:"transparent",cursor:"pointer",color:C.primary,fontSize:14,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginTop:4,marginBottom:14,fontFamily:"inherit"}}><Plus size={18}/> Novo contato</button>
         <div style={{display:"flex",alignItems:"center",gap:10,background:C.card,borderRadius:12,padding:"10px 14px",marginBottom:14,border:`1px solid ${C.border}`}}>
           <Search size={16} color={C.muted}/>
           <input value={searchCon} onChange={e=>setSearchCon(e.target.value)} placeholder="Buscar contato..." style={{border:"none",outline:"none",fontSize:14,color:C.text,background:"transparent",flex:1,fontFamily:"inherit"}}/>
@@ -1562,7 +1605,6 @@ export default function App() {
           </Card>
         ))}
         {filtered.length===0 && <p style={{textAlign:"center",color:C.muted,padding:"16px 0"}}>Nenhum contato encontrado.</p>}
-        <button onClick={()=>openAdd("contato",{cor:COR_OPTS[0], prestou:false, nota:0})} style={{width:"100%",padding:14,borderRadius:12,border:`2px dashed var(--primary)`, opacity:0.8, background:"transparent",cursor:"pointer",color:C.primary,fontSize:14,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginTop:4,fontFamily:"inherit"}}><Plus size={18}/> Novo contato</button>
       </div>
     );
   };
@@ -1596,6 +1638,7 @@ export default function App() {
         </div>
 
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <div onClick={()=>openAdd("ideia",{cat:activeCats[0]?.nome||"Outros",cor:IDEIA_COLS[0],tags:[],links:[]})} style={{borderRadius:14,border:`2px dashed var(--primary)`, opacity:0.8, padding:14,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:140,gap:6}}><Plus size={22} color={C.primary}/><p style={{fontSize:12,fontWeight:700,color:C.primary}}>Nova ideia</p></div>
           {filtered.map(i=>(
             <div key={i.id} onClick={()=>openEdit("ideia",i)} style={{background:i.cor,borderRadius:14,padding:14,boxShadow:"0 2px 8px rgba(0,0,0,0.06)",cursor:"pointer",display:"flex",flexDirection:"column"}}>
               <p style={{fontSize:11,fontWeight:600,color:C.muted,marginBottom:6}}>{i.cat}</p>
@@ -1607,7 +1650,6 @@ export default function App() {
               <p style={{fontSize:10,color:C.muted,marginTop:4}}>{i.data}</p>
             </div>
           ))}
-          <div onClick={()=>openAdd("ideia",{cat:activeCats[0]?.nome||"Outros",cor:IDEIA_COLS[0],tags:[],links:[]})} style={{borderRadius:14,border:`2px dashed var(--primary)`, opacity:0.8, padding:14,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:140,gap:6}}><Plus size={22} color={C.primary}/><p style={{fontSize:12,fontWeight:700,color:C.primary}}>Nova ideia</p></div>
         </div>
       </div>
     );
@@ -1617,7 +1659,7 @@ export default function App() {
     <div>
       <div style={{overflowX:"auto", margin:"0 16px 14px", paddingBottom:4}}>
         <div style={{display:"inline-flex", background:C.border, borderRadius:14, padding:4, gap:4}}>
-          {[["cotacoes","🛒 Cotações"],["tarefas","📋 Tarefas"],["anotacoes","📝 Anotações"],["contatos","👥 Contatos"],["ideias","💡 Ideias"]].map(([k,l])=>(
+          {[["docs","📄 Docs"],["tarefas","📋 Tarefas"],["anotacoes","📝 Anotações"],["contatos","👥 Contatos"],["ideias","💡 Ideias"]].map(([k,l])=>(
             <button key={k} onClick={()=>setMaisTab(k)} style={{
               padding:"10px 14px", borderRadius:10, border:"none", cursor:"pointer", whiteSpace:"nowrap",
               background:maisTab===k?C.card:"transparent", color:maisTab===k?C.primary:C.muted,
@@ -1627,11 +1669,11 @@ export default function App() {
         </div>
       </div>
       
-      {maisTab==="cotacoes" && renderCotacoes()}
-      {maisTab==="tarefas"  && renderTarefas()}
-      {maisTab==="anotacoes"&& renderAnotacoes()}
-      {maisTab==="contatos" && renderContatos()}
-      {maisTab==="ideias"   && renderIdeias()}
+      {maisTab==="docs"      && renderDocs()}
+      {maisTab==="tarefas"   && renderTarefas()}
+      {maisTab==="anotacoes" && renderAnotacoes()}
+      {maisTab==="contatos"  && renderContatos()}
+      {maisTab==="ideias"    && renderIdeias()}
     </div>
   );
 
@@ -1640,10 +1682,10 @@ export default function App() {
     {id:"dash",label:"Início",icon:Home},
     {id:"fin",label:"Finanças",icon:TrendingUp},
     {id:"obra",label:"Obra",icon:HardHat},
-    {id:"docs",label:"Docs",icon:FileText},
+    {id:"cotacoes",label:"Cotações",icon:LinkIcon},
     {id:"mais",label:"Ferramentas",icon:MoreHorizontal},
   ];
-  const headings = {dash:"Minha Obra",fin:"Financeiro",obra:"Andamento",docs:"Documentos",mais:"Ferramentas"};
+  const headings = {dash:"Minha Obra",fin:"Financeiro",obra:"Andamento",cotacoes:"Cotações",mais:"Ferramentas"};
 
   return (
     <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",background:C.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}} data-theme={isDark ? "dark" : "light"}>
@@ -1728,7 +1770,7 @@ export default function App() {
           {tab==="dash" && renderDash()}
           {tab==="fin"  && renderFin()}
           {tab==="obra" && renderObra()}
-          {tab==="docs" && renderDocs()}
+          {tab==="cotacoes" && renderCotacoes()}
           {tab==="mais" && renderMais()}
         </div>
       </div>
