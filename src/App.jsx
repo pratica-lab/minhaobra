@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { collection, onSnapshot, doc, setDoc, deleteDoc, writeBatch } from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { db, storage } from "./firebase";
+import { db } from "./firebase";
+import * as drive from "./driveService";
 import html2canvas from "html2canvas";
 import {
   Home, TrendingUp, HardHat, FileText, MoreHorizontal, Plus, Phone,
@@ -128,17 +128,15 @@ const compressFile = async (file) => {
 };
 
 const uploadToStorage = async (file, folder) => {
-  const fileRef = ref(storage, `${folder}/${Date.now()}_${file.name}`);
-  
-  // 30s timeout for the upload
-  const uploadPromise = uploadBytes(fileRef, file);
-  const timeoutPromise = new Promise((_, reject) => 
-    setTimeout(() => reject(new Error("O servidor demorou muito para responder. Verifique se o Storage está ativo no Console do Firebase.")), 30000)
-  );
-
-  const snapshot = await Promise.race([uploadPromise, timeoutPromise]);
-  const url = await getDownloadURL(snapshot.ref);
-  return { url, name: file.name, size: (file.size / 1024 / 1024).toFixed(2) + " MB" };
+  try {
+    const res = await drive.uploadFile(file, folder);
+    return res;
+  } catch (err) {
+    if (err.error === "popup_closed_by_user") {
+      throw new Error("Você precisa autorizar o acesso ao Google Drive para anexar arquivos.");
+    }
+    throw err;
+  }
 };
 
 /* ─── INITIAL DATA ─── */
@@ -248,6 +246,10 @@ export default function App() {
   const [readNotifs, setReadNotifs] = useState([]); // array of notif IDs
   const [deletedNotifs, setDeletedNotifs] = useState([]); // array of deleted notif IDs
   const [showNotifs, setShowNotifs] = useState(false);
+
+  useEffect(() => {
+    drive.initDrive().catch(err => console.error("Drive init error", err));
+  }, []);
 
   /* ─── TAB STATE ─── */
   const [tab, setTab]         = useState("dash");
@@ -449,14 +451,9 @@ export default function App() {
 
   /* ─── DOCUMENT DOWNLOAD ─── */
   const downloadDoc = (f) => {
-    const fileUrl = f.file || f.url; // Support old base64 and new Storage URLs
+    const fileUrl = f.file || f.url; 
     if (!fileUrl) return alert("Arquivo não encontrado.");
-    const link = document.createElement("a");
-    link.href = fileUrl;
-    link.download = f.titulo || f.nome;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    window.open(fileUrl, "_blank");
   };
 
   const [isUploading, setIsUploading] = useState(false);
@@ -988,6 +985,27 @@ export default function App() {
          {editing && <Btn label="Excluir anotação" onClick={async ()=>{await deleteDoc(doc(db, "anotacoes", d.id.toString())); logChange(`Excluiu a anotação "${d.t}"`); closeModal();}} color={C.danger} outline icon={<Trash2 size={15}/>}/>}
        </Sheet>
     );
+    if (type === "drive_config") {
+      const saveConfig = () => {
+        localStorage.setItem('DRIVE_CLIENT_ID', d.clientId || '');
+        localStorage.setItem('DRIVE_API_KEY', d.apiKey || '');
+        localStorage.setItem('DRIVE_LUAN_EMAIL', d.luanEmail || '');
+        alert("Configurações salvas! Recarregue o app para aplicar.");
+        closeModal();
+        window.location.reload();
+      };
+      return (
+        <Sheet title="Configurar Google Drive" onClose={closeModal}>
+          <p style={{fontSize:13, color:C.muted, marginBottom:16}}>Para usar o Drive gratuitamente, você precisa criar as chaves no Google Cloud Console.</p>
+          <FInput label="Google Client ID" value={d.clientId || localStorage.getItem('DRIVE_CLIENT_ID')} onChange={v=>setF("clientId",v)} placeholder="Ex: 12345-abcde.apps.googleusercontent.com"/>
+          <FInput label="Google API Key" value={d.apiKey || localStorage.getItem('DRIVE_API_KEY')} onChange={v=>setF("apiKey",v)} placeholder="Ex: AIzaSyB..."/>
+          <FInput label="E-mail do Luan (para compartilhar)" value={d.luanEmail || localStorage.getItem('DRIVE_LUAN_EMAIL')} onChange={v=>setF("luanEmail",v)} placeholder="luan@email.com"/>
+          <Btn label="Salvar e Recarregar" onClick={saveConfig}/>
+          <p style={{fontSize:11, color:C.muted, marginTop:12, textAlign:"center"}}>Essas chaves ficam salvas apenas no seu navegador.</p>
+        </Sheet>
+      );
+    }
+
     return null;
   };
 
@@ -1819,6 +1837,10 @@ export default function App() {
       {maisTab==="anotacoes" && renderAnotacoes()}
       {maisTab==="contatos"  && renderContatos()}
       {maisTab==="ideias"    && renderIdeias()}
+
+      <div style={{padding:16, borderTop:`1px solid ${C.border}`, marginTop:20}}>
+        <Btn label="Configurar Google Drive" outline icon={<Settings size={16}/>} onClick={()=>openAdd("drive_config")}/>
+      </div>
     </div>
   );
 
