@@ -1403,40 +1403,6 @@ export default function App() {
     );
   };
 
-  const renderDocs = () => {
-    const list = docTab==="contratos" ? contratos : projetos;
-    return (
-      <div style={{padding:"0 16px 16px"}}>
-        <Card style={{background:C.pLight,marginBottom:12,padding:"12px 14px"}}>
-          <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <Archive size={20} color={C.primary}/>
-            <div><p style={{fontSize:13,fontWeight:700,color:C.text}}>Armazenamento comprimido</p><p style={{fontSize:12,color:C.muted}}>Os arquivos anexados são automaticamente reduzidos para não lotar seu celular.</p></div>
-          </div>
-        </Card>
-        <div style={{display:"flex",background:C.border,borderRadius:12,padding:4,marginBottom:14}}>
-          {[["contratos","📄 Contratos"],["projetos","📐 Projetos"]].map(([k,l])=>( <button key={k} onClick={()=>setDocTab(k)} style={{flex:1,padding:"8px 0",borderRadius:9,border:"none",cursor:"pointer",background:docTab===k?C.card:"transparent",color:docTab===k?C.primary:C.muted,fontSize:13,fontWeight:700,boxShadow:docTab===k?"0 1px 4px rgba(0,0,0,0.08)":"none",fontFamily:"inherit"}}>{l}</button> ))}
-        </div>
-        <button onClick={()=>openAdd("doc",{ok:false})} style={{width:"100%",padding:14,borderRadius:12,border:`2px dashed var(--primary)`, opacity:0.8, background:"transparent",cursor:"pointer",color:C.primary,fontSize:14,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginTop:4,marginBottom:14,fontFamily:"inherit"}}><Upload size={18}/> Novo documento</button>
-        {list.map(f=>(
-          <Card key={f.id} style={{marginBottom:8,padding:"12px 14px"}}>
-            <div style={{display:"flex",alignItems:"flex-start",gap:12}}>
-              <div style={{width:42,height:42,borderRadius:10,background:C.dLight,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><FileText size={20} color={C.danger}/></div>
-              <div style={{flex:1}}>
-                <p style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:4}}>{f.nome}</p>
-                <div style={{display:"flex",gap:8,flexWrap:"wrap", alignItems:"center"}}>
-                   <p style={{fontSize:11,color:C.muted, textDecoration:"line-through"}}>{f.tam}</p>
-                   <p style={{fontSize:11,color:C.success,fontWeight:800}}>✦ {f.comp}</p>
-                </div>
-                <p style={{fontSize:11,color:C.muted,marginTop:2}}>{f.data}</p>
-                {docTab==="contratos" && ( <button onClick={()=>toggleSigned(f.id)} style={{marginTop:6,background:"none",border:"none",cursor:"pointer",padding:0,fontFamily:"inherit"}}><Badge label={f.ok?"✓ Assinado":"⏳ Marcar como assinado"} color={f.ok?C.success:C.warning} bg={f.ok?C.sLight:C.wLight}/></button> )}
-              </div>
-              <div style={{display:"flex",gap:6}}><SmBtn onClick={()=>openEdit("doc",f)} bg={C.bg}><Edit2 size={15} color={C.muted}/></SmBtn><SmBtn onClick={()=>downloadDoc(f)} bg={C.primary}><Download size={15} color="#fff"/></SmBtn></div>
-            </div>
-          </Card>
-        ))}
-      </div>
-    );
-  };
 
   const renderCotacaoCard = (q) => {
     const isOpen = expandedCot[q.id]; 
