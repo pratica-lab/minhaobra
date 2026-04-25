@@ -459,9 +459,8 @@ export default function App() {
     if (!file) return;
     setIsUploading(true);
     try {
-      const compressed = await compressFile(file);
       const folder = docTab === "contratos" ? "contratos" : "projetos";
-      const res = await uploadToStorage(compressed, folder);
+      const res = await uploadToStorage(file, folder);
       setF("url", res.url);
       setF("nome", res.name);
       setF("tam", (file.size / 1024 / 1024).toFixed(2) + " MB");
@@ -478,8 +477,7 @@ export default function App() {
     if (!file) return;
     setIsUploading(true);
     try {
-      const compressed = await compressFile(file);
-      const res = await uploadToStorage(compressed, "comprovantes");
+      const res = await uploadToStorage(file, "gastos");
       setF("compUrl", res.url);
       setF("comp", res.name);
     } catch (err) {
@@ -717,7 +715,7 @@ export default function App() {
               <label htmlFor="comp-upload" style={{width:"100%",padding:12,borderRadius:10,border:`1.5px dashed ${C.border}`,background:C.bg,color:C.text,fontSize:14,fontWeight:600,cursor:"pointer",display:isUploading?"none":"flex",alignItems:"center",justifyContent:"center",gap:8,fontFamily:"inherit"}}>
                 <Upload size={16}/> {isUploading ? "Enviando..." : "Anexar Comprovante"}
               </label>
-              {isUploading && <p style={{fontSize:12, color:C.primary, textAlign:"center", marginTop:4}}>Processando arquivo...</p>}
+              {isUploading && <p style={{fontSize:12, color:C.primary, textAlign:"center", marginTop:4}}>Enviando arquivo...</p>}
             </>
           )}
         </div>
@@ -757,8 +755,7 @@ export default function App() {
                <label htmlFor="doc-upload" style={{width:"100%",padding:20,borderRadius:12,border:`2px dashed var(--primary)`, opacity:0.6, background:C.pLight,color:C.primary,fontSize:14,fontWeight:800,cursor:"pointer",flexDirection:"column",alignItems:"center",gap:8,fontFamily:"inherit", display:isUploading?"none":"flex"}}>
                  <Upload size={24}/> {isUploading ? "Enviando..." : "Selecionar Arquivo"}
                </label>
-               {isUploading && <p style={{fontSize:12, color:C.primary, textAlign:"center", marginTop:8}}>Processando e comprimindo...</p>}
-               <p style={{fontSize:11, color:C.muted, textAlign:"center", marginTop:8}}>O sistema irá reduzir o arquivo automaticamente ao fazer o upload.</p>
+               {isUploading && <p style={{fontSize:12, color:C.primary, textAlign:"center", marginTop:8}}>Enviando arquivo para o servidor...</p>}
              </div>
           )}
           <FInput label="Data de envio (dd/mm/aaaa)" value={d.data} onChange={v=>setF("data",v)} placeholder="ex: 15/04/2026"/>
