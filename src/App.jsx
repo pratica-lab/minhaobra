@@ -87,10 +87,10 @@ const compressFile = async (file) => {
   if (!file.type.startsWith("image/")) return file;
   return new Promise((resolve) => {
     const reader = new FileReader();
-    reader.readAsDataURL(file);
+    reader.onerror = () => resolve(file);
     reader.onload = (e) => {
       const img = new Image();
-      img.src = e.target.result;
+      img.onerror = () => resolve(file);
       img.onload = () => {
         const canvas = document.createElement("canvas");
         const MAX_WIDTH = 1200;
@@ -100,10 +100,13 @@ const compressFile = async (file) => {
         const ctx = canvas.getContext("2d");
         ctx.drawImage(img, 0, 0, width, height);
         canvas.toBlob((blob) => {
+          if (!blob) return resolve(file);
           resolve(new File([blob], file.name, { type: "image/jpeg", lastModified: Date.now() }));
         }, "image/jpeg", 0.7);
       };
+      img.src = e.target.result;
     };
+    reader.readAsDataURL(file);
   });
 };
 
