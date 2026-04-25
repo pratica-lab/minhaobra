@@ -129,7 +129,14 @@ const compressFile = async (file) => {
 
 const uploadToStorage = async (file, folder) => {
   const fileRef = ref(storage, `${folder}/${Date.now()}_${file.name}`);
-  const snapshot = await uploadBytes(fileRef, file);
+  
+  // 30s timeout for the upload
+  const uploadPromise = uploadBytes(fileRef, file);
+  const timeoutPromise = new Promise((_, reject) => 
+    setTimeout(() => reject(new Error("O servidor demorou muito para responder. Verifique se o Storage está ativo no Console do Firebase.")), 30000)
+  );
+
+  const snapshot = await Promise.race([uploadPromise, timeoutPromise]);
   const url = await getDownloadURL(snapshot.ref);
   return { url, name: file.name, size: (file.size / 1024 / 1024).toFixed(2) + " MB" };
 };
