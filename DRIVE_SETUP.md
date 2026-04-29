@@ -36,16 +36,19 @@ O aplicativo utiliza Google Drive API para upload e armazenamento de arquivos (c
 
 ### 3. Configurar Credenciais no App
 
-As credenciais são armazenadas em **localStorage**:
+**✅ Client ID já está configurado no código!** 
 
+O Client ID `964687673028-4o6ceq1qg23ojpnl0f0vt1u49eut58fn.apps.googleusercontent.com` já está hardcoded no `driveService.js`.
+
+**Opcional:** Se quiser configurar uma API Key adicional (não obrigatória):
 ```javascript
-// No browser console ou em algum lugar da interface:
-localStorage.setItem('DRIVE_CLIENT_ID', 'SEU_CLIENT_ID_AQUI');
-localStorage.setItem('DRIVE_API_KEY', 'SEU_API_KEY_AQUI'); // Opcional, pode usar null
-localStorage.setItem('DRIVE_LUAN_EMAIL', 'luan@example.com'); // Opcional, para compartilhamento
+localStorage.setItem('DRIVE_API_KEY', 'SUA_API_KEY_OPCIONAL')
 ```
 
-Ou configure via interface (se existir um painel de settings).
+**Opcional:** Para compartilhamento automático com outro e-mail:
+```javascript
+localStorage.setItem('DRIVE_LUAN_EMAIL', 'luan@example.com')
+```
 
 ## Como Funciona o Fluxo
 
