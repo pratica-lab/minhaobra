@@ -16,6 +16,19 @@ let tokenClient;
 let gapiInited = false;
 let gisInited = false;
 
+const initTokenClient = () => {
+  if (tokenClient) return;
+  const { clientId } = getCreds();
+  if (!clientId) throw new Error("Faltando DRIVE_CLIENT_ID para inicializar o Google Identity Services.");
+  if (!window.google?.accounts?.oauth2) throw new Error("Google Identity Services não está carregado.");
+
+  tokenClient = window.google.accounts.oauth2.initTokenClient({
+    client_id: clientId,
+    scope: SCOPES,
+    callback: () => {},
+  });
+};
+
 export const initDrive = () => {
   return new Promise((resolve, reject) => {
     const { clientId, apiKey } = getCreds();
@@ -35,13 +48,13 @@ export const initDrive = () => {
 
     // 2. Carregar GIS (Identity Services)
     const loadGis = () => {
-      tokenClient = window.google.accounts.oauth2.initTokenClient({
-        client_id: clientId,
-        scope: SCOPES,
-        callback: '', // Definido na hora do uso
-      });
-      gisInited = true;
-      checkInit();
+      try {
+        initTokenClient();
+        gisInited = true;
+        checkInit();
+      } catch (err) {
+        console.error("Erro ao inicializar o token client:", err);
+      }
     };
 
     const checkInit = () => {
@@ -56,6 +69,12 @@ export const initDrive = () => {
 // Garante que temos um token válido
 export const getToken = () => {
   return new Promise((resolve, reject) => {
+    try {
+      if (!tokenClient) initTokenClient();
+    } catch (err) {
+      return reject(err);
+    }
+
     tokenClient.callback = (resp) => {
       if (resp.error !== undefined) {
         console.error("Erro ao obter token:", resp);
