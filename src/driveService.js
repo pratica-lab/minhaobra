@@ -4,7 +4,7 @@
 */
 
 const getCreds = () => ({
-  clientId: localStorage.getItem('DRIVE_CLIENT_ID') || '',
+  clientId: '964687673028-4o6ceq1qg23ojpnl0f0vt1u49eut58fn.apps.googleusercontent.com',
   apiKey: localStorage.getItem('DRIVE_API_KEY') || ''
 });
 
