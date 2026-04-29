@@ -16,6 +16,21 @@ let tokenClient;
 let gapiInited = false;
 let gisInited = false;
 
+const waitForGlobal = async (checkFn, timeoutMs = 5000) => {
+  const intervalMs = 100;
+  const maxTries = Math.ceil(timeoutMs / intervalMs);
+  let tries = 0;
+
+  return new Promise((resolve) => {
+    const poll = () => {
+      if (checkFn()) return resolve(true);
+      if (tries++ >= maxTries) return resolve(false);
+      setTimeout(poll, intervalMs);
+    };
+    poll();
+  });
+};
+
 const initTokenClient = () => {
   if (tokenClient) return;
   const { clientId } = getCreds();
@@ -30,12 +45,20 @@ const initTokenClient = () => {
 };
 
 export const initDrive = () => {
-  return new Promise((resolve, reject) => {
+  return new Promise(async (resolve) => {
     const { clientId, apiKey } = getCreds();
     if (!clientId || !apiKey) return resolve(); // Aguarda configuração
 
-    // 1. Carregar GAPI
-    const loadGapi = () => {
+    const readyGapi = await waitForGlobal(() => Boolean(window.gapi), 5000);
+    const readyGoogle = await waitForGlobal(() => Boolean(window.google?.accounts?.oauth2), 5000);
+
+    const checkInit = () => {
+      const gapiReady = readyGapi ? gapiInited : true;
+      const googleReady = readyGoogle ? gisInited : true;
+      if (gapiReady && googleReady) resolve();
+    };
+
+    if (readyGapi) {
       window.gapi.load('client', async () => {
         await window.gapi.client.init({
           apiKey: apiKey,
@@ -44,25 +67,22 @@ export const initDrive = () => {
         gapiInited = true;
         checkInit();
       });
-    };
+    }
 
-    // 2. Carregar GIS (Identity Services)
-    const loadGis = () => {
+    if (readyGoogle) {
       try {
         initTokenClient();
         gisInited = true;
-        checkInit();
       } catch (err) {
         console.error("Erro ao inicializar o token client:", err);
       }
-    };
+      checkInit();
+    }
 
-    const checkInit = () => {
-      if (gapiInited && gisInited) resolve();
-    };
-
-    if (window.gapi) loadGapi();
-    if (window.google) loadGis();
+    if (!readyGapi && !readyGoogle) {
+      console.warn("Google APIs não foram carregadas a tempo em initDrive.");
+      resolve();
+    }
   });
 };
 
@@ -75,7 +95,12 @@ export const getToken = () => {
       return reject(err);
     }
 
+    const timeout = window.setTimeout(() => {
+      reject(new Error('Tempo de autenticação esgotado. Recarregue a página e tente novamente.'));
+    }, 30000);
+
     tokenClient.callback = (resp) => {
+      window.clearTimeout(timeout);
       if (resp.error !== undefined) {
         console.error("Erro ao obter token:", resp);
         return reject(resp);
@@ -138,6 +163,16 @@ export const getOrCreateFolder = async (folderName, parentId = null) => {
   }
 };
 
+const fetchWithTimeout = async (url, options, timeoutMs = 60000) => {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    window.clearTimeout(timer);
+  }
+};
+
 // Upload de arquivo
 export const uploadFile = async (file, folderName) => {
   const accessToken = await getToken(); // Garante login e obtém token
@@ -171,14 +206,14 @@ export const uploadFile = async (file, folderName) => {
 
   const body = new Blob(parts, { type: 'multipart/related; boundary=' + boundary });
 
-  const resp = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink', {
+  const resp = await fetchWithTimeout('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${accessToken}`,
       'Content-Type': 'multipart/related; boundary=' + boundary
     },
     body: body
-  });
+  }, 60000);
 
   if (!resp.ok) {
     const errorData = await resp.json().catch(() => ({}));
