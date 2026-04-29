@@ -85,6 +85,24 @@ export const initDrive = async () => {
   log("Drive Service inicializado");
 };
 
+// Pré-autenticação: solicita permissão ANTES do upload
+// Deve ser chamado em contexto seguro (não durante file input)
+export const preAuthenticateIfNeeded = async () => {
+  if (cachedToken && tokenExpiry > Date.now()) {
+    log("Já autenticado, token em cache");
+    return;
+  }
+
+  try {
+    log("Pré-autenticando com Google Drive...");
+    await getToken();
+    log("Pré-autenticação bem-sucedida");
+  } catch (err) {
+    logError("Erro na pré-autenticação", err);
+    // Não falha aqui, apenas log. O upload vai tentar novamente.
+  }
+};
+
 export const getToken = () => {
   return new Promise((resolve, reject) => {
     try {
@@ -127,19 +145,23 @@ export const getToken = () => {
     };
 
     const currentToken = window.gapi?.client?.getToken?.();
-    try {
-      if (currentToken === null) {
-        log("Token expirado, solicitando novo com prompt de consentimento");
-        tokenClient.requestAccessToken({ prompt: 'consent' });
-      } else {
-        log("Token válido, solicitando silenciosamente");
-        tokenClient.requestAccessToken({ prompt: '' });
+    
+    // Executa em próximo tick do event loop para escapar de contextos bloqueados (file input)
+    window.setTimeout(() => {
+      try {
+        if (currentToken === null) {
+          log("Token expirado, solicitando novo com prompt de consentimento");
+          tokenClient.requestAccessToken({ prompt: 'consent' });
+        } else {
+          log("Token válido, solicitando silenciosamente");
+          tokenClient.requestAccessToken({ prompt: '' });
+        }
+      } catch (err) {
+        window.clearTimeout(timeout);
+        logError("Erro ao solicitar token", err);
+        reject(err);
       }
-    } catch (err) {
-      window.clearTimeout(timeout);
-      logError("Erro ao solicitar token", err);
-      reject(err);
-    }
+    }, 100); // pequeno delay para escapar do contexto bloqueado
   });
 };
 

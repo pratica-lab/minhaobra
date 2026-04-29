@@ -485,28 +485,37 @@ export default function App() {
     }
 
     setIsUploading(true);
-    try {
-      console.log(`[Upload] Iniciando upload de ${file.name} (${(file.size / 1024 / 1024).toFixed(2)}MB)`);
-      const folder = docTab === "contratos" ? "contratos" : "projetos";
-      const res = await uploadToStorage(file, folder);
-      console.log(`[Upload] Sucesso:`, res);
-      setF("url", res.url);
-      setF("nome", res.name);
-      setF("tam", (file.size / 1024 / 1024).toFixed(2) + " MB");
-      setF("comp", res.size);
-    } catch (err) {
-      console.error(`[Upload] Erro:`, err);
-      const errorMsg = err.message?.includes('autenticação') || err.message?.includes('token') 
-        ? "Erro de autenticação. Recarregue a página e tente novamente."
-        : err.message?.includes('timeout') || err.message?.includes('Timeout')
-        ? "Upload demorou muito. Verifique sua conexão e tente novamente."
-        : err.message?.includes('401') || err.message?.includes('403')
-        ? "Sem permissão para fazer upload. Verifique as credenciais do Google Drive."
-        : `Erro no upload: ${err.message}`;
-      alert(errorMsg);
-    } finally {
-      setIsUploading(false);
-    }
+    
+    // Usa setTimeout para escapar do contexto bloqueado do file input
+    // Isso permite que a popup de autenticação do Google abra corretamente
+    window.setTimeout(async () => {
+      try {
+        console.log(`[Upload] Iniciando upload de ${file.name} (${(file.size / 1024 / 1024).toFixed(2)}MB)`);
+        
+        // Pré-autentica se necessário em contexto seguro
+        await drive.preAuthenticateIfNeeded();
+        
+        const folder = docTab === "contratos" ? "contratos" : "projetos";
+        const res = await uploadToStorage(file, folder);
+        console.log(`[Upload] Sucesso:`, res);
+        setF("url", res.url);
+        setF("nome", res.name);
+        setF("tam", (file.size / 1024 / 1024).toFixed(2) + " MB");
+        setF("comp", res.size);
+      } catch (err) {
+        console.error(`[Upload] Erro:`, err);
+        const errorMsg = err.message?.includes('autenticação') || err.message?.includes('token') 
+          ? "Erro de autenticação. Recarregue a página e tente novamente."
+          : err.message?.includes('timeout') || err.message?.includes('Timeout')
+          ? "Upload demorou muito. Verifique sua conexão e tente novamente."
+          : err.message?.includes('401') || err.message?.includes('403')
+          ? "Sem permissão para fazer upload. Verifique as credenciais do Google Drive."
+          : `Erro no upload: ${err.message}`;
+        alert(errorMsg);
+      } finally {
+        setIsUploading(false);
+      }
+    }, 50); // pequeno delay para garantir que saiu do contexto do file input
   };
 
   const handleGastoFile = async (e) => {
@@ -519,25 +528,33 @@ export default function App() {
     }
 
     setIsUploading(true);
-    try {
-      console.log(`[Upload] Iniciando upload de ${file.name} (${(file.size / 1024 / 1024).toFixed(2)}MB)`);
-      const res = await uploadToStorage(file, "gastos");
-      console.log(`[Upload] Sucesso:`, res);
-      setF("compUrl", res.url);
-      setF("comp", res.name);
-    } catch (err) {
-      console.error(`[Upload] Erro:`, err);
-      const errorMsg = err.message?.includes('autenticação') || err.message?.includes('token')
-        ? "Erro de autenticação. Recarregue a página e tente novamente."
-        : err.message?.includes('timeout') || err.message?.includes('Timeout')
-        ? "Upload demorou muito. Verifique sua conexão e tente novamente."
-        : err.message?.includes('401') || err.message?.includes('403')
-        ? "Sem permissão para fazer upload. Verifique as credenciais do Google Drive."
-        : `Erro no upload: ${err.message}`;
-      alert(errorMsg);
-    } finally {
-      setIsUploading(false);
-    }
+    
+    // Usa setTimeout para escapar do contexto bloqueado do file input
+    window.setTimeout(async () => {
+      try {
+        console.log(`[Upload] Iniciando upload de ${file.name} (${(file.size / 1024 / 1024).toFixed(2)}MB)`);
+        
+        // Pré-autentica se necessário em contexto seguro
+        await drive.preAuthenticateIfNeeded();
+        
+        const res = await uploadToStorage(file, "gastos");
+        console.log(`[Upload] Sucesso:`, res);
+        setF("compUrl", res.url);
+        setF("comp", res.name);
+      } catch (err) {
+        console.error(`[Upload] Erro:`, err);
+        const errorMsg = err.message?.includes('autenticação') || err.message?.includes('token')
+          ? "Erro de autenticação. Recarregue a página e tente novamente."
+          : err.message?.includes('timeout') || err.message?.includes('Timeout')
+          ? "Upload demorou muito. Verifique sua conexão e tente novamente."
+          : err.message?.includes('401') || err.message?.includes('403')
+          ? "Sem permissão para fazer upload. Verifique as credenciais do Google Drive."
+          : `Erro no upload: ${err.message}`;
+        alert(errorMsg);
+      } finally {
+        setIsUploading(false);
+      }
+    }, 50); // pequeno delay para garantir que saiu do contexto do file input
   };
 
   const [showAllPayments, setShowAllPayments] = useState(false);
