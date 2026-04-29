@@ -57,11 +57,19 @@ export const initDrive = () => {
 export const getToken = () => {
   return new Promise((resolve, reject) => {
     tokenClient.callback = (resp) => {
-      if (resp.error !== undefined) reject(resp);
+      if (resp.error !== undefined) {
+        console.error("Erro ao obter token:", resp);
+        return reject(resp);
+      }
+      // CRITICAL: Registra o token no cliente GAPI para que as chamadas subsequentes funcionem
+      if (window.gapi && window.gapi.client) {
+        window.gapi.client.setToken(resp);
+      }
       resolve(resp.access_token);
     };
 
-    if (window.gapi.client.getToken() === null) {
+    const currentToken = window.gapi?.client?.getToken();
+    if (currentToken === null) {
       tokenClient.requestAccessToken({ prompt: 'consent' });
     } else {
       tokenClient.requestAccessToken({ prompt: '' });
@@ -71,44 +79,49 @@ export const getToken = () => {
 
 // Encontra ou cria a pasta "Minha Obra"
 export const getOrCreateFolder = async (folderName, parentId = null) => {
-  const q = `name = '${folderName}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false${parentId ? ` and '${parentId}' in parents` : ''}`;
-  const response = await window.gapi.client.drive.files.list({ q, fields: 'files(id, name)' });
-  const files = response.result.files;
+  try {
+    const q = `name = '${folderName}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false${parentId ? ` and '${parentId}' in parents` : ''}`;
+    const response = await window.gapi.client.drive.files.list({ q, fields: 'files(id, name)' });
+    const files = response.result.files;
 
-  if (files && files.length > 0) {
-    return files[0].id;
-  }
+    if (files && files.length > 0) {
+      return files[0].id;
+    }
 
-  // Se não existe, cria
-  const fileMetadata = {
-    name: folderName,
-    mimeType: 'application/vnd.google-apps.folder',
-    parents: parentId ? [parentId] : []
-  };
-  const res = await window.gapi.client.drive.files.create({
-    resource: fileMetadata,
-    fields: 'id'
-  });
-  const newFolderId = res.result.id;
+    // Se não existe, cria
+    const fileMetadata = {
+      name: folderName,
+      mimeType: 'application/vnd.google-apps.folder',
+      parents: parentId ? [parentId] : []
+    };
+    const res = await window.gapi.client.drive.files.create({
+      resource: fileMetadata,
+      fields: 'id'
+    });
+    const newFolderId = res.result.id;
 
-  // Se for a pasta raiz e tiver e-mail do Luan configurado, compartilha automaticamente
-  if (folderName === 'Minha Obra' && !parentId) {
-    const luanEmail = localStorage.getItem('DRIVE_LUAN_EMAIL');
-    if (luanEmail && luanEmail.includes('@')) {
-      try {
-        await shareFolder(newFolderId, luanEmail);
-      } catch (err) {
-        console.error("Erro ao compartilhar pasta:", err);
+    // Se for a pasta raiz e tiver e-mail do Luan configurado, compartilha automaticamente
+    if (folderName === 'Minha Obra' && !parentId) {
+      const luanEmail = localStorage.getItem('DRIVE_LUAN_EMAIL');
+      if (luanEmail && luanEmail.includes('@')) {
+        try {
+          await shareFolder(newFolderId, luanEmail);
+        } catch (err) {
+          console.error("Erro ao compartilhar pasta:", err);
+        }
       }
     }
-  }
 
-  return newFolderId;
+    return newFolderId;
+  } catch (error) {
+    console.error(`Erro em getOrCreateFolder (${folderName}):`, error);
+    throw new Error(`Não foi possível acessar ou criar a pasta "${folderName}" no Google Drive.`);
+  }
 };
 
 // Upload de arquivo
 export const uploadFile = async (file, folderName) => {
-  await getToken(); // Garante login
+  const accessToken = await getToken(); // Garante login e obtém token
 
   const rootFolderId = await getOrCreateFolder('Minha Obra');
   const subFolderId = await getOrCreateFolder(folderName, rootFolderId);
@@ -118,15 +131,41 @@ export const uploadFile = async (file, folderName) => {
     parents: [subFolderId]
   };
 
-  const formData = new FormData();
-  formData.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-  formData.append('file', file);
+  // Para upload multipart/related (metadados + arquivo), precisamos construir o corpo manualmente
+  const boundary = '-------314159265358979323846';
+  const delimiter = "\r\n--" + boundary + "\r\n";
+  const close_delim = "\r\n--" + boundary + "--";
+
+  const contentType = file.type || 'application/octet-stream';
+
+  const metadataPart = JSON.stringify(metadata);
+
+  const parts = [
+    delimiter,
+    'Content-Type: application/json; charset=UTF-8\r\n\r\n',
+    metadataPart,
+    delimiter,
+    'Content-Type: ' + contentType + '\r\n\r\n',
+    file,
+    close_delim
+  ];
+
+  const body = new Blob(parts, { type: 'multipart/related; boundary=' + boundary });
 
   const resp = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink', {
     method: 'POST',
-    headers: { Authorization: `Bearer ${window.gapi.client.getToken().access_token}` },
-    body: formData
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'multipart/related; boundary=' + boundary
+    },
+    body: body
   });
+
+  if (!resp.ok) {
+    const errorData = await resp.json().catch(() => ({}));
+    console.error("Erro na API do Google Drive:", errorData);
+    throw new Error(errorData.error?.message || "Falha ao enviar arquivo para o Google Drive.");
+  }
 
   const result = await resp.json();
   return {
