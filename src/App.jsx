@@ -635,7 +635,7 @@ export default function App() {
   };
   const excluirDocumento = async () => { 
     // Mostra confirmação antes de excluir
-    const confirmacao = window.confirm(`Tem certeza que deseja excluir o documento "${d.nome}"?\n\nEsta ação não pode ser desfeita e também removerá o arquivo do Google Drive.`);
+    const confirmacao = window.confirm(`Tem certeza que deseja excluir o documento "${d.nome}"?\n\nEsta ação não pode ser desfeita${d.driveId ? ' e também removerá o arquivo do Google Drive' : ''}.`);
     
     if (!confirmacao) return;
     
@@ -1092,26 +1092,7 @@ export default function App() {
          {editing && <Btn label="Excluir anotação" onClick={async ()=>{await deleteDoc(doc(db, "anotacoes", d.id.toString())); logChange(`Excluiu a anotação "${d.t}"`); closeModal();}} color={C.danger} outline icon={<Trash2 size={15}/>}/>}
        </Sheet>
     );
-    if (type === "drive_config") {
-      const saveConfig = () => {
-        localStorage.setItem('DRIVE_CLIENT_ID', d.clientId || '');
-        localStorage.setItem('DRIVE_API_KEY', d.apiKey || '');
-        localStorage.setItem('DRIVE_LUAN_EMAIL', d.luanEmail || '');
-        alert("Configurações salvas! Recarregue o app para aplicar.");
-        closeModal();
-        window.location.reload();
-      };
-      return (
-        <Sheet title="Configurar Google Drive" onClose={closeModal}>
-          <p style={{fontSize:13, color:C.muted, marginBottom:16}}>Para usar o Drive gratuitamente, você precisa criar as chaves no Google Cloud Console.</p>
-          <FInput label="Google Client ID" value={d.clientId || localStorage.getItem('DRIVE_CLIENT_ID')} onChange={v=>setF("clientId",v)} placeholder="Ex: 12345-abcde.apps.googleusercontent.com"/>
-          <FInput label="Google API Key" value={d.apiKey || localStorage.getItem('DRIVE_API_KEY')} onChange={v=>setF("apiKey",v)} placeholder="Ex: AIzaSyB..."/>
-          <FInput label="E-mail do Luan (para compartilhar)" value={d.luanEmail || localStorage.getItem('DRIVE_LUAN_EMAIL')} onChange={v=>setF("luanEmail",v)} placeholder="luan@email.com"/>
-          <Btn label="Salvar e Recarregar" onClick={saveConfig}/>
-          <p style={{fontSize:11, color:C.muted, marginTop:12, textAlign:"center"}}>Essas chaves ficam salvas apenas no seu navegador.</p>
-        </Sheet>
-      );
-    }
+    // Modal de configuração do Google Drive removido - agora é automático
 
     return null;
   };
@@ -1946,7 +1927,7 @@ export default function App() {
       {maisTab==="ideias"    && renderIdeias()}
 
       <div style={{padding:16, borderTop:`1px solid ${C.border}`, marginTop:20}}>
-        <Btn label="Configurar Google Drive" outline icon={<Settings size={16}/>} onClick={()=>openAdd("drive_config")}/>
+        {/* Google Drive já está configurado automaticamente */}
       </div>
     </div>
   );
