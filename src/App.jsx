@@ -128,13 +128,30 @@ const compressFile = async (file) => {
 };
 
 const uploadToStorage = async (file, folder) => {
+  if (!file) throw new Error("Nenhum arquivo selecionado");
+  if (!folder) throw new Error("Pasta de destino não especificada");
+  
   try {
+    console.log(`[uploadToStorage] Enviando ${file.name} para ${folder}`);
     const res = await drive.uploadFile(file, folder);
+    console.log(`[uploadToStorage] Resultado:`, res);
     return res;
   } catch (err) {
-    if (err.error === "popup_closed_by_user") {
-      throw new Error("Você precisa autorizar o acesso ao Google Drive para anexar arquivos.");
+    console.error(`[uploadToStorage] Erro:`, err);
+    
+    if (err.message?.includes("popup_closed_by_user")) {
+      throw new Error("Você fechou a janela de autenticação. Por favor, autorize o acesso ao Google Drive.");
     }
+    if (err.message?.includes("401")) {
+      throw new Error("Token inválido ou expirado. Recarregue a página e tente novamente.");
+    }
+    if (err.message?.includes("403")) {
+      throw new Error("Sem permissão para acessar Google Drive. Verifique as credenciais.");
+    }
+    if (err.message?.includes("DRIVE_CLIENT_ID")) {
+      throw new Error("Google Drive não está configurado. Contate o administrador.");
+    }
+    
     throw err;
   }
 };
@@ -461,16 +478,32 @@ export default function App() {
   const handleFileChange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
+
+    const maxSize = 100 * 1024 * 1024; // 100MB
+    if (file.size > maxSize) {
+      return alert(`Arquivo muito grande. Máximo: 100MB. Seu arquivo: ${(file.size / 1024 / 1024).toFixed(2)}MB`);
+    }
+
     setIsUploading(true);
     try {
+      console.log(`[Upload] Iniciando upload de ${file.name} (${(file.size / 1024 / 1024).toFixed(2)}MB)`);
       const folder = docTab === "contratos" ? "contratos" : "projetos";
       const res = await uploadToStorage(file, folder);
+      console.log(`[Upload] Sucesso:`, res);
       setF("url", res.url);
       setF("nome", res.name);
       setF("tam", (file.size / 1024 / 1024).toFixed(2) + " MB");
       setF("comp", res.size);
     } catch (err) {
-      alert("Erro no upload: " + err.message);
+      console.error(`[Upload] Erro:`, err);
+      const errorMsg = err.message?.includes('autenticação') || err.message?.includes('token') 
+        ? "Erro de autenticação. Recarregue a página e tente novamente."
+        : err.message?.includes('timeout') || err.message?.includes('Timeout')
+        ? "Upload demorou muito. Verifique sua conexão e tente novamente."
+        : err.message?.includes('401') || err.message?.includes('403')
+        ? "Sem permissão para fazer upload. Verifique as credenciais do Google Drive."
+        : `Erro no upload: ${err.message}`;
+      alert(errorMsg);
     } finally {
       setIsUploading(false);
     }
@@ -479,13 +512,29 @@ export default function App() {
   const handleGastoFile = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
+
+    const maxSize = 100 * 1024 * 1024; // 100MB
+    if (file.size > maxSize) {
+      return alert(`Arquivo muito grande. Máximo: 100MB. Seu arquivo: ${(file.size / 1024 / 1024).toFixed(2)}MB`);
+    }
+
     setIsUploading(true);
     try {
+      console.log(`[Upload] Iniciando upload de ${file.name} (${(file.size / 1024 / 1024).toFixed(2)}MB)`);
       const res = await uploadToStorage(file, "gastos");
+      console.log(`[Upload] Sucesso:`, res);
       setF("compUrl", res.url);
       setF("comp", res.name);
     } catch (err) {
-      alert("Erro no upload: " + err.message);
+      console.error(`[Upload] Erro:`, err);
+      const errorMsg = err.message?.includes('autenticação') || err.message?.includes('token')
+        ? "Erro de autenticação. Recarregue a página e tente novamente."
+        : err.message?.includes('timeout') || err.message?.includes('Timeout')
+        ? "Upload demorou muito. Verifique sua conexão e tente novamente."
+        : err.message?.includes('401') || err.message?.includes('403')
+        ? "Sem permissão para fazer upload. Verifique as credenciais do Google Drive."
+        : `Erro no upload: ${err.message}`;
+      alert(errorMsg);
     } finally {
       setIsUploading(false);
     }

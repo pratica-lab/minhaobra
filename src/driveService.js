@@ -1,7 +1,6 @@
 /* 
   GOOGLE DRIVE SERVICE
-  Este serviço gerencia a autenticação e operações no Drive.
-  IMPORTANTE: Você deve preencher o CLIENT_ID e API_KEY no .env ou diretamente aqui.
+  Gerencia autenticação OAuth2 e upload de arquivos para Google Drive.
 */
 
 const getCreds = () => ({
@@ -9,235 +8,432 @@ const getCreds = () => ({
   apiKey: localStorage.getItem('DRIVE_API_KEY') || ''
 });
 
-const SCOPES = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.metadata.readonly';
-const DISCOVERY_DOCS = ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'];
-
+const SCOPES = 'https://www.googleapis.com/auth/drive.file';
 let tokenClient;
-let gapiInited = false;
-let gisInited = false;
+let cachedToken = null;
+let tokenExpiry = 0;
 
-const waitForGlobal = async (checkFn, timeoutMs = 5000) => {
-  const intervalMs = 100;
-  const maxTries = Math.ceil(timeoutMs / intervalMs);
-  let tries = 0;
+const log = (msg, data = null) => {
+  console.log(`[DriveService] ${msg}`, data || '');
+};
 
-  return new Promise((resolve) => {
-    const poll = () => {
-      if (checkFn()) return resolve(true);
-      if (tries++ >= maxTries) return resolve(false);
-      setTimeout(poll, intervalMs);
-    };
-    poll();
-  });
+const logError = (msg, err = null) => {
+  console.error(`[DriveService ERROR] ${msg}`, err || '');
+};
+
+const waitForGlobal = async (checkFn, timeoutMs = 10000) => {
+  const start = Date.now();
+  while (!checkFn() && Date.now() - start < timeoutMs) {
+    await new Promise(r => setTimeout(r, 100));
+  }
+  return checkFn();
 };
 
 const initTokenClient = () => {
-  if (tokenClient) return;
+  if (tokenClient) return true;
+  
   const { clientId } = getCreds();
-  if (!clientId) throw new Error("Faltando DRIVE_CLIENT_ID para inicializar o Google Identity Services.");
-  if (!window.google?.accounts?.oauth2) throw new Error("Google Identity Services não está carregado.");
+  if (!clientId) {
+    logError("DRIVE_CLIENT_ID não configurado no localStorage");
+    return false;
+  }
 
-  tokenClient = window.google.accounts.oauth2.initTokenClient({
-    client_id: clientId,
-    scope: SCOPES,
-    callback: () => {},
-  });
+  if (!window.google?.accounts?.oauth2) {
+    logError("Google Identity Services não está disponível");
+    return false;
+  }
+
+  try {
+    tokenClient = window.google.accounts.oauth2.initTokenClient({
+      client_id: clientId,
+      scope: SCOPES,
+      callback: () => {}, // será sobrescrito em getToken
+    });
+    log("tokenClient inicializado com sucesso");
+    return true;
+  } catch (err) {
+    logError("Erro ao inicializar tokenClient", err);
+    return false;
+  }
 };
 
-export const initDrive = () => {
-  return new Promise(async (resolve) => {
-    const { clientId, apiKey } = getCreds();
-    if (!clientId || !apiKey) return resolve(); // Aguarda configuração
+export const initDrive = async () => {
+  log("Iniciando Drive Service...");
+  
+  const { clientId, apiKey } = getCreds();
+  if (!clientId || !apiKey) {
+    log("Credenciais não configuradas. Aguardando configuração manual.");
+    return;
+  }
 
-    const readyGapi = await waitForGlobal(() => Boolean(window.gapi), 5000);
-    const readyGoogle = await waitForGlobal(() => Boolean(window.google?.accounts?.oauth2), 5000);
+  // Aguarda Google APIs
+  const hasGapi = await waitForGlobal(() => Boolean(window.gapi), 10000);
+  const hasGoogleAccounts = await waitForGlobal(() => Boolean(window.google?.accounts?.oauth2), 10000);
 
-    const checkInit = () => {
-      const gapiReady = readyGapi ? gapiInited : true;
-      const googleReady = readyGoogle ? gisInited : true;
-      if (gapiReady && googleReady) resolve();
-    };
+  if (!hasGapi) {
+    logError("GAPI não foi carregado após 10s");
+  }
+  if (!hasGoogleAccounts) {
+    logError("Google Accounts não foi carregado após 10s");
+  }
 
-    if (readyGapi) {
-      window.gapi.load('client', async () => {
-        await window.gapi.client.init({
-          apiKey: apiKey,
-          discoveryDocs: DISCOVERY_DOCS,
-        });
-        gapiInited = true;
-        checkInit();
-      });
-    }
+  // Tenta inicializar o token client
+  if (hasGoogleAccounts) {
+    initTokenClient();
+  }
 
-    if (readyGoogle) {
-      try {
-        initTokenClient();
-        gisInited = true;
-      } catch (err) {
-        console.error("Erro ao inicializar o token client:", err);
-      }
-      checkInit();
-    }
-
-    if (!readyGapi && !readyGoogle) {
-      console.warn("Google APIs não foram carregadas a tempo em initDrive.");
-      resolve();
-    }
-  });
+  log("Drive Service inicializado");
 };
 
-// Garante que temos um token válido
 export const getToken = () => {
   return new Promise((resolve, reject) => {
     try {
-      if (!tokenClient) initTokenClient();
+      if (!initTokenClient()) {
+        return reject(new Error("Não foi possível inicializar o token client. Verifique se DRIVE_CLIENT_ID está configurado."));
+      }
     } catch (err) {
       return reject(err);
     }
 
+    // Se temos um token em cache e ainda não expirou, usa ele
+    if (cachedToken && tokenExpiry > Date.now()) {
+      log("Usando token em cache");
+      return resolve(cachedToken);
+    }
+
     const timeout = window.setTimeout(() => {
-      reject(new Error('Tempo de autenticação esgotado. Recarregue a página e tente novamente.'));
-    }, 30000);
+      reject(new Error('Timeout ao obter token do Google. Verifique sua conexão e tente novamente.'));
+    }, 45000);
 
     tokenClient.callback = (resp) => {
       window.clearTimeout(timeout);
-      if (resp.error !== undefined) {
-        console.error("Erro ao obter token:", resp);
-        return reject(resp);
+      
+      if (resp.error) {
+        logError("Erro na autenticação do Google", resp.error);
+        return reject(new Error(resp.error));
       }
-      // CRITICAL: Registra o token no cliente GAPI para que as chamadas subsequentes funcionem
-      if (window.gapi && window.gapi.client) {
-        window.gapi.client.setToken(resp);
+
+      if (!resp.access_token) {
+        logError("Token não recebido da autenticação");
+        return reject(new Error("Não foi recebido token do Google"));
       }
+
+      // Cacheia o token e define expiração (geralmente 3600s, deixamos margem)
+      cachedToken = resp.access_token;
+      tokenExpiry = Date.now() + (resp.expires_in - 300) * 1000;
+      
+      log("Token obtido com sucesso", { expiresIn: resp.expires_in });
       resolve(resp.access_token);
     };
 
-    const currentToken = window.gapi?.client?.getToken();
-    if (currentToken === null) {
-      tokenClient.requestAccessToken({ prompt: 'consent' });
-    } else {
-      tokenClient.requestAccessToken({ prompt: '' });
+    const currentToken = window.gapi?.client?.getToken?.();
+    try {
+      if (currentToken === null) {
+        log("Token expirado, solicitando novo com prompt de consentimento");
+        tokenClient.requestAccessToken({ prompt: 'consent' });
+      } else {
+        log("Token válido, solicitando silenciosamente");
+        tokenClient.requestAccessToken({ prompt: '' });
+      }
+    } catch (err) {
+      window.clearTimeout(timeout);
+      logError("Erro ao solicitar token", err);
+      reject(err);
     }
   });
 };
 
-// Encontra ou cria a pasta "Minha Obra"
+// Cria requisição com retry automático
+const fetchWithRetry = async (url, options, maxRetries = 3) => {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), 120000); // 2 minutos
+
+  let lastError;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      log(`Tentativa ${attempt}/${maxRetries}: ${url.split('?')[0]}`);
+      
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+      });
+
+      window.clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        logError(`HTTP ${response.status}:`, errorText);
+        
+        // Se for erro de autenticação, limpa o cache de token
+        if (response.status === 401) {
+          cachedToken = null;
+          tokenExpiry = 0;
+        }
+
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      }
+
+      return response;
+    } catch (err) {
+      lastError = err;
+      
+      if (err.name === 'AbortError') {
+        logError(`Timeout na tentativa ${attempt}`);
+        break;
+      }
+
+      if (attempt < maxRetries) {
+        const waitTime = Math.min(1000 * Math.pow(2, attempt - 1), 10000);
+        log(`Erro na tentativa ${attempt}, aguardando ${waitTime}ms antes de retry...`);
+        await new Promise(r => setTimeout(r, waitTime));
+      }
+    }
+  }
+
+  window.clearTimeout(timeoutId);
+  throw lastError || new Error('Falha após múltiplas tentativas');
+};
+
+// Encontra ou cria pasta no Google Drive
 export const getOrCreateFolder = async (folderName, parentId = null) => {
   try {
-    const q = `name = '${folderName}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false${parentId ? ` and '${parentId}' in parents` : ''}`;
-    const response = await window.gapi.client.drive.files.list({ q, fields: 'files(id, name)' });
-    const files = response.result.files;
+    const token = await getToken();
+    
+    log(`Procurando ou criando pasta: "${folderName}"`);
 
-    if (files && files.length > 0) {
-      return files[0].id;
+    // Query para encontrar a pasta
+    const q = encodeURIComponent(
+      `name='${folderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false` +
+      (parentId ? ` and '${parentId}' in parents` : '')
+    );
+
+    const listResponse = await fetchWithRetry(
+      `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&pageSize=1`,
+      {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      }
+    );
+
+    const listData = await listResponse.json();
+    
+    if (listData.files && listData.files.length > 0) {
+      log(`Pasta encontrada: ${listData.files[0].id}`);
+      return listData.files[0].id;
     }
 
-    // Se não existe, cria
-    const fileMetadata = {
+    // Pasta não existe, cria nova
+    log(`Pasta não encontrada, criando: "${folderName}"`);
+
+    const metadata = {
       name: folderName,
       mimeType: 'application/vnd.google-apps.folder',
-      parents: parentId ? [parentId] : []
     };
-    const res = await window.gapi.client.drive.files.create({
-      resource: fileMetadata,
-      fields: 'id'
-    });
-    const newFolderId = res.result.id;
 
-    // Se for a pasta raiz e tiver e-mail do Luan configurado, compartilha automaticamente
+    if (parentId) {
+      metadata.parents = [parentId];
+    }
+
+    const createResponse = await fetchWithRetry(
+      'https://www.googleapis.com/drive/v3/files?fields=id',
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(metadata),
+      }
+    );
+
+    const createData = await createResponse.json();
+    
+    if (!createData.id) {
+      throw new Error('Resposta inválida ao criar pasta: sem ID');
+    }
+
+    log(`Pasta criada com sucesso: ${createData.id}`);
+
+    // Compartilha com Luan se for a pasta raiz
     if (folderName === 'Minha Obra' && !parentId) {
       const luanEmail = localStorage.getItem('DRIVE_LUAN_EMAIL');
       if (luanEmail && luanEmail.includes('@')) {
         try {
-          await shareFolder(newFolderId, luanEmail);
+          await shareFolder(createData.id, luanEmail);
         } catch (err) {
-          console.error("Erro ao compartilhar pasta:", err);
+          logError(`Erro ao compartilhar pasta com ${luanEmail}`, err);
         }
       }
     }
 
-    return newFolderId;
+    return createData.id;
   } catch (error) {
-    console.error(`Erro em getOrCreateFolder (${folderName}):`, error);
-    throw new Error(`Não foi possível acessar ou criar a pasta "${folderName}" no Google Drive.`);
+    logError(`Erro em getOrCreateFolder("${folderName}")`, error);
+    throw error;
   }
 };
 
-const fetchWithTimeout = async (url, options, timeoutMs = 60000) => {
-  const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, { ...options, signal: controller.signal });
-  } finally {
-    window.clearTimeout(timer);
-  }
-};
-
-// Upload de arquivo
+// Upload de arquivo usando fetch e FormData
 export const uploadFile = async (file, folderName) => {
-  const accessToken = await getToken(); // Garante login e obtém token
+  try {
+    if (!file) throw new Error("Arquivo não fornecido");
+    if (!folderName) throw new Error("Nome da pasta não fornecido");
 
-  const rootFolderId = await getOrCreateFolder('Minha Obra');
-  const subFolderId = await getOrCreateFolder(folderName, rootFolderId);
+    log(`Iniciando upload: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)}MB) para "${folderName}"`);
 
-  const metadata = {
-    name: `${Date.now()}_${file.name}`,
-    parents: [subFolderId]
-  };
+    const token = await getToken();
+    log("Token obtido com sucesso");
 
-  // Para upload multipart/related (metadados + arquivo), precisamos construir o corpo manualmente
-  const boundary = '-------314159265358979323846';
-  const delimiter = "\r\n--" + boundary + "\r\n";
-  const close_delim = "\r\n--" + boundary + "--";
+    // Obtém ou cria as pastas
+    const rootFolderId = await getOrCreateFolder('Minha Obra');
+    const subFolderId = await getOrCreateFolder(folderName, rootFolderId);
 
-  const contentType = file.type || 'application/octet-stream';
+    // Prepara metadados do arquivo
+    const metadata = {
+      name: `${Date.now()}_${file.name}`,
+      parents: [subFolderId],
+      mimeType: file.type || 'application/octet-stream',
+    };
 
-  const metadataPart = JSON.stringify(metadata);
+    log(`Metadados preparados`, metadata);
 
-  const parts = [
-    delimiter,
-    'Content-Type: application/json; charset=UTF-8\r\n\r\n',
-    metadataPart,
-    delimiter,
-    'Content-Type: ' + contentType + '\r\n\r\n',
-    file,
-    close_delim
-  ];
+    // Usa FormData para multipart (muito mais confiável que construir manualmente)
+    const formData = new FormData();
+    formData.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+    formData.append('file', file);
 
-  const body = new Blob(parts, { type: 'multipart/related; boundary=' + boundary });
+    log("Enviando arquivo para Google Drive API...");
 
-  const resp = await fetchWithTimeout('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${accessToken}`,
-      'Content-Type': 'multipart/related; boundary=' + boundary
-    },
-    body: body
-  }, 60000);
+    const uploadResponse = await fetchWithRetry(
+      'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink,size,mimeType,createdTime',
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+        body: formData,
+      },
+      3 // até 3 tentativas
+    );
 
-  if (!resp.ok) {
-    const errorData = await resp.json().catch(() => ({}));
-    console.error("Erro na API do Google Drive:", errorData);
-    throw new Error(errorData.error?.message || "Falha ao enviar arquivo para o Google Drive.");
+    const uploadData = await uploadResponse.json();
+
+    if (!uploadData.id) {
+      throw new Error('Resposta inválida do Google Drive: sem ID do arquivo');
+    }
+
+    log(`Upload concluído com sucesso`, {
+      id: uploadData.id,
+      name: uploadData.name,
+      size: uploadData.size,
+      url: uploadData.webViewLink,
+    });
+
+    return {
+      id: uploadData.id,
+      name: uploadData.name,
+      url: uploadData.webViewLink,
+      size: uploadData.size ? (uploadData.size / 1024 / 1024).toFixed(2) + ' MB' : file.size,
+      mimeType: uploadData.mimeType,
+      createdTime: uploadData.createdTime,
+    };
+  } catch (error) {
+    logError(`Erro em uploadFile("${file?.name}", "${folderName}")`, error);
+    throw error;
   }
-
-  const result = await resp.json();
-  return {
-    id: result.id,
-    name: result.name,
-    url: result.webViewLink,
-    size: (file.size / 1024 / 1024).toFixed(2) + " MB"
-  };
 };
 
-// Compartilha com outro e-mail
-export const shareFolder = async (folderId, email) => {
-  await window.gapi.client.drive.permissions.create({
-    fileId: folderId,
-    resource: {
-      role: 'writer',
-      type: 'user',
-      emailAddress: email
-    }
-  });
+// Compartilha arquivo/pasta com um e-mail
+export const shareFolder = async (fileId, email) => {
+  try {
+    const token = await getToken();
+
+    log(`Compartilhando ${fileId} com ${email}`);
+
+    const response = await fetchWithRetry(
+      `https://www.googleapis.com/drive/v3/files/${fileId}/permissions?fields=id`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          role: 'writer',
+          type: 'user',
+          emailAddress: email,
+        }),
+      }
+    );
+
+    const data = await response.json();
+    log(`Compartilhamento concluído`, data);
+    return data;
+  } catch (error) {
+    logError(`Erro ao compartilhar com ${email}`, error);
+    throw error;
+  }
+};
+
+// Baixa um arquivo do Google Drive
+export const downloadFile = async (fileId, fileName) => {
+  try {
+    const token = await getToken();
+
+    log(`Baixando arquivo: ${fileId}`);
+
+    const response = await fetchWithRetry(
+      `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+      {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      }
+    );
+
+    const blob = await response.blob();
+
+    // Cria link de download
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName || fileId;
+    document.body.appendChild(link);
+    link.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(link);
+
+    log(`Arquivo baixado: ${fileName}`);
+  } catch (error) {
+    logError(`Erro ao baixar arquivo ${fileId}`, error);
+    throw error;
+  }
+};
+
+// Remove arquivo do Google Drive
+export const deleteFile = async (fileId) => {
+  try {
+    const token = await getToken();
+
+    log(`Deletando arquivo: ${fileId}`);
+
+    await fetchWithRetry(
+      `https://www.googleapis.com/drive/v3/files/${fileId}`,
+      {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      }
+    );
+
+    log(`Arquivo deletado com sucesso`);
+  } catch (error) {
+    logError(`Erro ao deletar arquivo ${fileId}`, error);
+    throw error;
+  }
 };
