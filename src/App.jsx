@@ -502,6 +502,7 @@ export default function App() {
         setF("nome", res.name);
         setF("tam", (file.size / 1024 / 1024).toFixed(2) + " MB");
         setF("comp", res.size);
+        setF("driveId", res.id); // Salva o ID do arquivo no Google Drive
       } catch (err) {
         console.error(`[Upload] Erro:`, err);
         const errorMsg = err.message?.includes('autenticação') || err.message?.includes('token') 
@@ -541,6 +542,7 @@ export default function App() {
         console.log(`[Upload] Sucesso:`, res);
         setF("compUrl", res.url);
         setF("comp", res.name);
+        setF("compDriveId", res.id); // Salva o ID do arquivo no Google Drive
       } catch (err) {
         console.error(`[Upload] Erro:`, err);
         const errorMsg = err.message?.includes('autenticação') || err.message?.includes('token')
@@ -579,13 +581,33 @@ export default function App() {
   };
   
   const deleteGasto = async () => { 
-    if (parseInt(d.etapaId) === 999) {
-      await deleteDoc(doc(db, "outrosGastos", d.id.toString()));
-    } else {
-      const e = etapas.find(x => x.id.toString() === d.etapaId?.toString());
-      if(e) await setDoc(doc(db, "etapas", e.id.toString()), {...e, gastos: e.gastos.filter(g => g.id.toString() !== d.id.toString())});
+    // Mostra confirmação antes de excluir
+    const confirmacao = window.confirm(`Tem certeza que deseja excluir o gasto "${d.desc}"?\n\nEsta ação não pode ser desfeita${d.compDriveId ? ' e também removerá o comprovante do Google Drive' : ''}.`);
+    
+    if (!confirmacao) return;
+    
+    try {
+      // Exclui comprovante do Google Drive se existir
+      if (d.compDriveId) {
+        console.log(`[Exclusão] Removendo comprovante do Google Drive: ${d.compDriveId}`);
+        await drive.deleteFile(d.compDriveId);
+      }
+      
+      // Exclui do Firestore
+      if (parseInt(d.etapaId) === 999) {
+        await deleteDoc(doc(db, "outrosGastos", d.id.toString()));
+      } else {
+        const e = etapas.find(x => x.id.toString() === d.etapaId?.toString());
+        if(e) await setDoc(doc(db, "etapas", e.id.toString()), {...e, gastos: e.gastos.filter(g => g.id.toString() !== d.id.toString())});
+      }
+      
+      logChange(`Excluiu o gasto "${d.desc}"`); 
+      closeModal();
+    } catch (error) {
+      console.error(`[Exclusão] Erro ao excluir gasto:`, error);
+      alert(`Erro ao excluir gasto: ${error.message}`);
     }
-    logChange(`Excluiu o gasto "${d.desc}"`); closeModal(); 
+  }; 
   };
 
   const saveCheck = async () => {
@@ -612,9 +634,28 @@ export default function App() {
     logChange(modal.editing ? `Editou o documento "${item.nome}"` : `Adicionou o documento "${item.nome}"`); closeModal();
   };
   const excluirDocumento = async () => { 
-    if(docTab==="contratos") await deleteDoc(doc(db, "contratos", d.id.toString()));
-    else await deleteDoc(doc(db, "projetos", d.id.toString()));
-    logChange(`Excluiu o documento "${d.nome}"`); closeModal(); 
+    // Mostra confirmação antes de excluir
+    const confirmacao = window.confirm(`Tem certeza que deseja excluir o documento "${d.nome}"?\n\nEsta ação não pode ser desfeita e também removerá o arquivo do Google Drive.`);
+    
+    if (!confirmacao) return;
+    
+    try {
+      // Exclui do Google Drive se existir driveId
+      if (d.driveId) {
+        console.log(`[Exclusão] Removendo arquivo do Google Drive: ${d.driveId}`);
+        await drive.deleteFile(d.driveId);
+      }
+      
+      // Exclui do Firestore
+      if(docTab==="contratos") await deleteDoc(doc(db, "contratos", d.id.toString()));
+      else await deleteDoc(doc(db, "projetos", d.id.toString()));
+      
+      logChange(`Excluiu o documento "${d.nome}"`); 
+      closeModal();
+    } catch (error) {
+      console.error(`[Exclusão] Erro ao excluir documento:`, error);
+      alert(`Erro ao excluir documento: ${error.message}`);
+    }
   };
   const toggleSigned = async (id) => { 
      const item = contratos.find(c=>c.id===id);
