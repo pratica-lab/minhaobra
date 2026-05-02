@@ -8,7 +8,8 @@ import {
   Mail, Check, Clock, Download, Eye, Search, Bell, X,
   CheckSquare, Square, ChevronDown, ChevronUp, Archive, ArrowRight,
   Trash2, Edit2, User, Users, ExternalLink, Settings, Link as LinkIcon,
-  Star, Upload, Moon, Sun, LogOut, ArrowUp, ArrowDown, MoveVertical} from "lucide-react";
+  Star, Upload, Moon, Sun, LogOut, ArrowUp, ArrowDown, MoveVertical,
+  Camera, Image as ImageIcon, Folder, ChevronLeft, ChevronRight } from "lucide-react";
 
 /* ─── THEME CSS VARIABLES ─── */
 const themeStyles = `
@@ -247,6 +248,10 @@ export default function App() {
   const [tab, setTab]         = useState("dash");
   const [maisTab, setMaisTab] = useState("docs");
   const [docTab, setDocTab]   = useState("contratos");
+  
+  /* ─── GALERIA STATE ─── */
+  const [selectedPastaId, setSelectedPastaId] = useState(null);
+  const [viewerImage, setViewerImage] = useState(null); // { fotos: [], index: 0 }
 
   /* ─── DATA STATE ─── */
   const [etapas,    setEtapas]    = useState([]);
@@ -261,6 +266,7 @@ export default function App() {
   const [tarefas,   setTarefas]   = useState([]);
   const [ideiaCats, setIdeiaCats] = useState([]);
   const [ideiaTags, setIdeiaTags] = useState([]);
+  const [galeria,   setGaleria]   = useState([]);
 
   useEffect(() => {
     const unsubEtapas = onSnapshot(collection(db, "etapas"), snapshot => {
@@ -282,11 +288,12 @@ export default function App() {
     const unsubTar = onSnapshot(collection(db, "tarefas"), snapshot => setTarefas(snapshot.docs.map(d=>({id:isNaN(d.id)?d.id:Number(d.id), ...d.data()}))));
     const unsubCats = onSnapshot(collection(db, "ideiaCats"), snapshot => setIdeiaCats(snapshot.docs.map(d=>({id:isNaN(d.id)?d.id:Number(d.id), ...d.data()}))));
     const unsubTags = onSnapshot(doc(db, "meta", "ideiaTags"), doc => { if (doc.exists()) setIdeiaTags(doc.data().tags || []); });
+    const unsubGaleria = onSnapshot(collection(db, "galeria"), snapshot => setGaleria(snapshot.docs.map(d=>({id:isNaN(d.id)?d.id:Number(d.id), ...d.data()}))));
 
     return () => {
       unsubEtapas(); unsubOutros(); unsubCheck(); unsubContr(); unsubProj();
       unsubCot(); unsubContat(); unsubIdeias(); unsubAnot(); unsubTar();
-      unsubCats(); unsubTags();
+      unsubCats(); unsubTags(); unsubGaleria();
     };
   }, []);
 
@@ -297,7 +304,6 @@ export default function App() {
   const [searchCon,   setSearchCon]   = useState("");
   const [searchGasto, setSearchGasto] = useState("");
   const [searchIdeia, setSearchIdeia] = useState("");
-  const [searchAnotacao, setSearchAnotacao] = useState("");
   const [searchDoc,   setSearchDoc]   = useState(""); 
   const [catFiltro,   setCatFiltro]   = useState("Todas");
   const [openEtapaId, setOpenEtapaId] = useState(null);
@@ -375,10 +381,8 @@ export default function App() {
   };
   
   const openEdit = (type, item, parentId=null) => {
-    // Clona e limpa qualquer undefined estrutural que venha do React
     const data = JSON.parse(JSON.stringify(item));
     
-    // Transforma legados em arrays automaticamente ao editar de forma segura
     if (type === "gasto" && !data.anexos) {
       data.anexos = data.comp ? [{nome: data.comp, url: data.compUrl, driveId: data.compDriveId || ""}] : [];
     }
@@ -423,7 +427,6 @@ export default function App() {
     };
     if(!modal.editing) { item.id = uid(); item.gastos = []; }
     
-    // Filtro de segurança nativo para evitar undefined error
     const payload = JSON.parse(JSON.stringify(item));
     await setDoc(doc(db, "etapas", item.id.toString()), payload);
     
@@ -464,35 +467,22 @@ export default function App() {
 
     const maxSize = 100 * 1024 * 1024;
     for (let file of files) {
-      if (file.size > maxSize) {
-        return alert(`O arquivo ${file.name} é muito grande. Máximo de 100MB por arquivo.`);
-      }
+      if (file.size > maxSize) return alert(`O arquivo ${file.name} é muito grande. Máximo de 100MB por arquivo.`);
     }
 
     setIsUploading(true);
-    
     window.setTimeout(async () => {
       try {
         await drive.preAuthenticateIfNeeded();
         const folder = docTab === "contratos" ? "contratos" : "projetos";
         const novosAnexos = [];
-        
         for (let file of files) {
-          console.log(`[Upload] Iniciando ${file.name}`);
           const res = await uploadToStorage(file, folder);
-          novosAnexos.push({
-             nome: res.name, url: res.url, driveId: res.id, 
-             tam: (file.size / 1024 / 1024).toFixed(2) + " MB", comp: res.size
-          });
+          novosAnexos.push({ nome: res.name, url: res.url, driveId: res.id, tam: (file.size / 1024 / 1024).toFixed(2) + " MB", comp: res.size });
         }
-        
         setF("anexos", [...(d.anexos || []), ...novosAnexos]);
       } catch (err) {
-        console.error(`[Upload] Erro:`, err);
-        const errorMsg = err.message?.includes('autenticação') || err.message?.includes('token') 
-          ? "Erro de autenticação. Recarregue a página e tente novamente."
-          : `Erro no upload: ${err.message}`;
-        alert(errorMsg);
+        alert(err.message?.includes('autenticação') ? "Erro de autenticação. Recarregue e tente novamente." : `Erro: ${err.message}`);
       } finally {
         setIsUploading(false);
       }
@@ -505,9 +495,7 @@ export default function App() {
 
     const maxSize = 100 * 1024 * 1024;
     for (let file of files) {
-      if (file.size > maxSize) {
-        return alert(`O arquivo ${file.name} é muito grande. Máximo de 100MB por arquivo.`);
-      }
+      if (file.size > maxSize) return alert(`O arquivo ${file.name} é muito grande. Máximo de 100MB por arquivo.`);
     }
 
     setIsUploading(true);
@@ -515,22 +503,13 @@ export default function App() {
       try {
         await drive.preAuthenticateIfNeeded();
         const novosAnexos = [];
-        
         for (let file of files) {
-          console.log(`[Upload] Iniciando ${file.name}`);
           const res = await uploadToStorage(file, "gastos");
-          novosAnexos.push({
-             nome: res.name, url: res.url, driveId: res.id
-          });
+          novosAnexos.push({ nome: res.name, url: res.url, driveId: res.id });
         }
-        
         setF("anexos", [...(d.anexos || []), ...novosAnexos]);
       } catch (err) {
-        console.error(`[Upload] Erro:`, err);
-        const errorMsg = err.message?.includes('autenticação') || err.message?.includes('token')
-          ? "Erro de autenticação. Recarregue a página e tente novamente."
-          : `Erro no upload: ${err.message}`;
-        alert(errorMsg);
+        alert(err.message?.includes('autenticação') ? "Erro de autenticação. Recarregue e tente novamente." : `Erro: ${err.message}`);
       } finally {
         setIsUploading(false);
       }
@@ -557,14 +536,62 @@ export default function App() {
         }
         setF("anexos", [...(d.anexos || []), ...novosAnexos]);
       } catch (err) {
-        const errorMsg = err.message?.includes('autenticação') || err.message?.includes('token')
-          ? "Erro de autenticação. Recarregue a página e tente novamente."
-          : `Erro no upload: ${err.message}`;
-        alert(errorMsg);
+        alert(err.message?.includes('autenticação') ? "Erro de autenticação. Recarregue e tente novamente." : `Erro: ${err.message}`);
       } finally {
         setIsUploading(false);
       }
     }, 50);
+  };
+
+  const handleGaleriaFile = async (e, pastaId) => {
+    const files = Array.from(e.target.files);
+    if (!files.length) return;
+
+    const maxSize = 100 * 1024 * 1024;
+    for (let file of files) {
+      if (file.size > maxSize) return alert(`O arquivo ${file.name} é muito grande.`);
+    }
+
+    setIsUploading(true);
+    window.setTimeout(async () => {
+      try {
+        await drive.preAuthenticateIfNeeded();
+        const novasFotos = [];
+        for (let file of files) {
+          const compressed = await compressFile(file);
+          const res = await uploadToStorage(compressed, "galeria");
+          novasFotos.push({ id: uid() + Math.random(), nome: res.name, url: res.url, driveId: res.id, data: todayFmt() });
+        }
+        const pasta = galeria.find(p => p.id === pastaId);
+        if(pasta) {
+          const updatedPasta = { ...pasta, fotos: [...(pasta.fotos || []), ...novasFotos] };
+          await setDoc(doc(db, "galeria", pasta.id.toString()), JSON.parse(JSON.stringify(updatedPasta)));
+        }
+      } catch (err) {
+        alert(err.message?.includes('autenticação') ? "Erro de autenticação. Recarregue e tente novamente." : `Erro no upload: ${err.message}`);
+      } finally {
+        setIsUploading(false);
+      }
+    }, 50);
+  };
+
+  const deleteFoto = async (pastaId, fotoIndex, ev) => {
+    ev.stopPropagation();
+    const pasta = galeria.find(p => p.id === pastaId);
+    if(!pasta) return;
+    
+    const foto = pasta.fotos[fotoIndex];
+    const confirmacao = window.confirm(`Deseja excluir esta imagem?`);
+    if(!confirmacao) return;
+
+    try {
+      if(foto.driveId) await drive.deleteFile(foto.driveId);
+      const novasFotos = [...pasta.fotos];
+      novasFotos.splice(fotoIndex, 1);
+      await setDoc(doc(db, "galeria", pasta.id.toString()), JSON.parse(JSON.stringify({...pasta, fotos: novasFotos})));
+    } catch(err) {
+      alert(`Erro ao excluir foto: ${err.message}`);
+    }
   };
 
   const [showAllPayments, setShowAllPayments] = useState(false);
@@ -572,18 +599,14 @@ export default function App() {
   const saveGasto = async () => {
     if(!d.desc?.trim()||!d.valor) return alert("Descrição e valor são obrigatórios");
     const etId = parseInt(d.etapaId);
-    
-    // modal.parentId armazena a etapa original caso o gasto esteja sendo editado
     const oldEtId = modal.editing ? parseInt(modal.parentId) : null;
 
     let v = parseFloat(d.valor)||0, pagador = d.pagador || 'G', vG = 0, vL = 0;
     if(pagador === 'G') vG = v; else if(pagador === 'L') vL = v; else { vG = parseFloat(d.valorG)||(v/2); vL = parseFloat(d.valorL)||(v/2); v = vG + vL; }
     
-    // Construção segura e limpa do objeto, o JSON.parse(JSON.stringify) remove propriedades undefined silenciosas
     const gRaw = { id:d.id||uid(), desc:d.desc, valor:v, valorG:vG, valorL:vL, pagador, data:d.data||today(), recebedor:d.recebedor||"", tags:d.tags||"", obs:d.obs||"", anexos:d.anexos||[] };
     const g = JSON.parse(JSON.stringify(gRaw));
     
-    // Se estiver editando e o usuário mudou a etapa do Gasto: devemos deletar da etapa antiga primeiro
     if (modal.editing && oldEtId !== etId) {
        if (oldEtId === 999) {
           await deleteDoc(doc(db, "outrosGastos", g.id.toString()));
@@ -591,13 +614,11 @@ export default function App() {
           const oldE = etapas.find(x => x.id.toString() === oldEtId.toString());
           if (oldE) {
              const gastosLimpos = oldE.gastos.filter(x => x.id.toString() !== g.id.toString());
-             // Sanitize payload para não passar undefined no setDoc
              await setDoc(doc(db, "etapas", oldE.id.toString()), JSON.parse(JSON.stringify({...oldE, gastos: gastosLimpos})));
           }
        }
     }
 
-    // Salva ou Atualiza o gasto na etapa Nova/Atual
     if (etId === 999) {
       await setDoc(doc(db, "outrosGastos", g.id.toString()), g);
     } else {
@@ -605,13 +626,10 @@ export default function App() {
       if(e) {
          let novosGastos;
          if (modal.editing && oldEtId === etId) {
-            // Apenas atualiza o item caso ele já estivesse nessa mesma etapa
             novosGastos = e.gastos.map(x => x.id.toString()===g.id.toString() ? g : x);
          } else {
-            // É um novo item OU ele acabou de ser movido para cá
             novosGastos = [...e.gastos, g];
          }
-         // Sanitize payload
          await setDoc(doc(db, "etapas", e.id.toString()), JSON.parse(JSON.stringify({...e, gastos: novosGastos})));
       }
     }
@@ -621,20 +639,15 @@ export default function App() {
   
   const deleteGasto = async () => { 
     const confirmacao = window.confirm(`Tem certeza que deseja excluir o gasto "${d.desc}"?\n\nEsta ação não pode ser desfeita${d.anexos?.length ? ' e também removerá os comprovantes anexos do Google Drive.' : '.'}`);
-    
     if (!confirmacao) return;
     
     try {
-      // Exclui comprovantes do Google Drive
       if (d.anexos && d.anexos.length > 0) {
-        for (const a of d.anexos) {
-           if (a.driveId) await drive.deleteFile(a.driveId);
-        }
+        for (const a of d.anexos) { if (a.driveId) await drive.deleteFile(a.driveId); }
       } else if (d.compDriveId) {
         await drive.deleteFile(d.compDriveId);
       }
       
-      // Exclui do Firestore
       if (parseInt(d.etapaId) === 999) {
         await deleteDoc(doc(db, "outrosGastos", d.id.toString()));
       } else {
@@ -648,7 +661,6 @@ export default function App() {
       logChange(`Excluiu o gasto "${d.desc}"`); 
       closeModal();
     } catch (error) {
-      console.error(`[Exclusão] Erro ao excluir gasto:`, error);
       alert(`Erro ao excluir gasto: ${error.message}`);
     }
   }; 
@@ -671,7 +683,6 @@ export default function App() {
 
   const saveDoc = async () => {
     if(!d.titulo?.trim() && !d.nome?.trim()) return alert("Título do documento é obrigatório!");
-    
     const itemRaw = {...d, id:d.id||uid(), data:d.data||todayFmt(), anexos: d.anexos||[], tags: d.tags||""};
     const item = JSON.parse(JSON.stringify(itemRaw));
     
@@ -683,14 +694,11 @@ export default function App() {
 
   const excluirDocumento = async () => { 
     const confirmacao = window.confirm(`Tem certeza que deseja excluir o documento "${d.titulo || d.nome}"?\n\nEsta ação não pode ser desfeita${d.anexos?.length ? ' e também removerá os arquivos anexos do Google Drive.' : '.'}`);
-    
     if (!confirmacao) return;
     
     try {
       if (d.anexos && d.anexos.length > 0) {
-        for (const a of d.anexos) {
-           if (a.driveId) await drive.deleteFile(a.driveId);
-        }
+        for (const a of d.anexos) { if (a.driveId) await drive.deleteFile(a.driveId); }
       } else if (d.driveId) {
         await drive.deleteFile(d.driveId);
       }
@@ -701,7 +709,6 @@ export default function App() {
       logChange(`Excluiu o documento "${d.titulo || d.nome}"`); 
       closeModal();
     } catch (error) {
-      console.error(`[Exclusão] Erro ao excluir documento:`, error);
       alert(`Erro ao excluir documento: ${error.message}`);
     }
   };
@@ -782,16 +789,38 @@ export default function App() {
     if (!confirmacao) return;
     try {
        if (d.anexos && d.anexos.length > 0) {
-         for (const a of d.anexos) {
-            if (a.driveId) await drive.deleteFile(a.driveId);
-         }
+         for (const a of d.anexos) { if (a.driveId) await drive.deleteFile(a.driveId); }
        }
        await deleteDoc(doc(db, "ideias", d.id.toString())); 
        logChange(`Excluiu a ideia "${d.t}"`); 
        closeModal(); 
     } catch(error) {
-       console.error(`[Exclusão] Erro ao excluir ideia:`, error);
        alert(`Erro ao excluir ideia: ${error.message}`);
+    }
+  };
+
+  /* ─── GALERIA ACTIONS ─── */
+  const savePastaGaleria = async () => {
+    if(!d.nome?.trim()) return alert("Nome da pasta é obrigatório");
+    const item = {...d, dataCriacao: d.dataCriacao || today()};
+    if(!modal.editing) { item.id = uid(); item.fotos = []; }
+    await setDoc(doc(db, "galeria", item.id.toString()), JSON.parse(JSON.stringify(item)));
+    logChange(modal.editing ? `Editou a pasta "${item.nome}"` : `Criou a pasta "${item.nome}"`); closeModal();
+  };
+
+  const deletePastaGaleria = async () => {
+    const confirmacao = window.confirm(`Tem certeza que deseja excluir a pasta "${d.nome}" e TODAS as fotos dentro dela?`);
+    if(!confirmacao) return;
+    try {
+      if(d.fotos && d.fotos.length > 0) {
+         for (const f of d.fotos) { if(f.driveId) await drive.deleteFile(f.driveId); }
+      }
+      await deleteDoc(doc(db, "galeria", d.id.toString()));
+      logChange(`Excluiu a pasta "${d.nome}"`); 
+      if(selectedPastaId === d.id) setSelectedPastaId(null);
+      closeModal();
+    } catch(e) {
+      alert("Erro ao excluir: " + e.message);
     }
   };
 
@@ -880,7 +909,6 @@ export default function App() {
         <FInput label="Tags (separadas por vírgula)" value={d.tags} onChange={v=>setF("tags",v)} placeholder="Ex: material, urgente"/>
         <FTextarea label="Observações" value={d.obs} onChange={v=>setF("obs",v)} rows={2} placeholder="Detalhes do pagamento..."/>
         
-        {/* Upload Multiplo de Comprovantes */}
         <div style={{marginBottom:14}}>
           <p style={{fontSize:12,fontWeight:700,color:C.muted,marginBottom:6}}>Comprovantes Anexos</p>
           
@@ -1190,8 +1218,15 @@ export default function App() {
          {editing && <Btn label="Excluir anotação" onClick={async ()=>{await deleteDoc(doc(db, "anotacoes", d.id.toString())); logChange(`Excluiu a anotação "${d.t}"`); closeModal();}} color={C.danger} outline icon={<Trash2 size={15}/>}/>}
        </Sheet>
     );
+
+    if(type==="pastaGaleria") return (
+       <Sheet title={editing?"Editar Pasta":"Nova Pasta de Fotos"} onClose={closeModal}>
+         <FInput label="Nome da Pasta (ex: Fundação, Setembro 2026...)" value={d.nome} onChange={v=>setF("nome",v)} required/>
+         <Btn label="Salvar Pasta" onClick={savePastaGaleria}/>
+         {editing && <Btn label="Excluir pasta e fotos" onClick={deletePastaGaleria} color={C.danger} outline icon={<Trash2 size={15}/>}/>}
+       </Sheet>
+    );
     
-    // Configuração Google Drive: Nenhuma interface exposta, funciona integrado e automático
     return null;
   };
 
@@ -1297,6 +1332,29 @@ export default function App() {
     );
   };
 
+  /* ─── IMAGE VIEWER OVERLAY ─── */
+  const renderImageViewer = () => {
+     if(!viewerImage) return null;
+     const { fotos, index } = viewerImage;
+     if(!fotos || fotos.length === 0) return null;
+     const foto = fotos[index];
+     
+     return (
+       <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.95)",display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"center"}}>
+         <div style={{position:"absolute",top:20,right:20,display:"flex",gap:16}}>
+           <button onClick={()=>setViewerImage(null)} style={{background:"none",border:"none",color:"#fff",cursor:"pointer"}}><X size={30}/></button>
+         </div>
+         <p style={{position:"absolute",top:25,left:20,color:"#fff",fontSize:14,fontWeight:700}}>{index + 1} / {fotos.length}</p>
+
+         <img src={foto.url} style={{maxWidth:"100%",maxHeight:"80vh",objectFit:"contain"}} alt={foto.nome}/>
+         <p style={{position:"absolute",bottom:30,color:"#fff",fontSize:13, opacity:0.8}}>{foto.data} - {foto.nome}</p>
+
+         {index > 0 && <button onClick={()=>setViewerImage({...viewerImage, index: index-1})} style={{position:"absolute",left:20,top:"50%",transform:"translateY(-50%)",background:"rgba(255,255,255,0.1)",border:"none",borderRadius:"50%",padding:10,color:"#fff",cursor:"pointer"}}><ChevronLeft size={30}/></button>}
+         {index < fotos.length - 1 && <button onClick={()=>setViewerImage({...viewerImage, index: index+1})} style={{position:"absolute",right:20,top:"50%",transform:"translateY(-50%)",background:"rgba(255,255,255,0.1)",border:"none",borderRadius:"50%",padding:10,color:"#fff",cursor:"pointer"}}><ChevronRight size={30}/></button>}
+       </div>
+     );
+  };
+
   /* ═══════════════════════════════════
      VIEW RENDERERS
   ═══════════════════════════════════ */
@@ -1328,7 +1386,6 @@ export default function App() {
   }
 
   const GastoItem = ({g, e}) => {
-    // Mescla o modelo novo (anexos array) com o legado (comp e compUrl) caso ainda exista
     const anexos = g.anexos && g.anexos.length > 0 ? g.anexos : (g.comp ? [{nome: g.comp, url: g.compUrl}] : []);
     
     return (
@@ -1357,7 +1414,6 @@ export default function App() {
           <p style={{fontSize:11,color:C.muted,fontWeight:600}}>Data: {g.data}</p>
         </div>
         
-        {/* Exibe todos os anexos com botão de download/abrir em nova guia */}
         {anexos.length > 0 && (
           <div style={{display:"flex",gap:6,marginTop:10,flexWrap:"wrap",justifyContent:"flex-end"}}>
             {anexos.map((a, idx) => (
@@ -1394,11 +1450,11 @@ export default function App() {
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:16}}>
         {[
           {label:"Lançar gasto",emoji:"💰",bg:C.pLight,action:()=>openAdd("gasto",{etapaId:etapas[0]?.id})},
-          {label:"Nova cotação",emoji:"🛒",bg:C.sLight,action:()=>{setTab("cotacoes");setTimeout(()=>openAdd("cotacao",{cat:CAT_OPTS[0]}),200)}},
+          {label:"Evolução",emoji:"📸",bg:C.sLight,action:()=>setTab("galeria")},
           {label:"Anotar ideia",emoji:"💡",bg:C.wLight,action:()=>{setTab("mais");setMaisTab("ideias");setTimeout(()=>openAdd("ideia",{cat:(ideiaCats||[]).find(c=>c.ativa)?.nome||"Outros",cor:IDEIA_COLS[0],tags:[],links:[]}),200)}},
           {label:"Nova tarefa",emoji:"📋",bg:C.dLight,action:()=>{setTab("mais");setMaisTab("tarefas");setTimeout(()=>openAdd("tarefa",{done:false}),200)}},
-          {label:"Nova anotação",emoji:"📝",bg:C.sLight,action:()=>{setTab("mais");setMaisTab("anotacoes");setTimeout(()=>openAdd("anotacao",{}),200)}},
-          {label:"Add contato",emoji:"👥",bg:C.pLight,action:()=>{setTab("mais");setMaisTab("contatos");setTimeout(()=>openAdd("contato",{cor:COR_OPTS[0], prestou:false, nota:0}),200)}},
+          {label:"Nova cotação",emoji:"🛒",bg:C.sLight,action:()=>{setTab("cotacoes");setTimeout(()=>openAdd("cotacao",{cat:CAT_OPTS[0]}),200)}},
+          {label:"Nova etapa",emoji:"🏗️",bg:C.pLight,action:()=>openAdd("etapa",{emoji:"🏗️",st:"wait",pct:0,dataIniEst:todayYM(),durEst:2,dataIniReal:"",durReal:0})},
         ].map((a,i)=>(
           <Card key={i} style={{padding:"14px 10px",textAlign:"center",background:a.bg,cursor:"pointer"}} onClick={a.action}>
             <p style={{fontSize:24,marginBottom:6}}>{a.emoji}</p>
@@ -1684,7 +1740,6 @@ export default function App() {
     );
   };
 
-
   const renderCotacaoCard = (q) => {
     const isOpen = expandedCot[q.id]; 
     const best = q.forn.find(f=>f.best); 
@@ -1790,7 +1845,6 @@ export default function App() {
         {abertas.map(q => renderCotacaoCard(q))}
         {abertas.length === 0 && <p style={{textAlign:"center", color:C.muted, margin:"20px 0"}}>Nenhuma cotação em aberto.</p>}
 
-
         {concluidas.length > 0 && (
            <div style={{marginTop:20}}>
               <button onClick={()=>setShowConcluidas(!showConcluidas)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",padding:14,borderRadius:12,background:C.border,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
@@ -1810,6 +1864,79 @@ export default function App() {
         )}
       </div>
     );
+  };
+
+  /* ─── RENDER GALERIA (EVOLUÇÃO DA OBRA) ─── */
+  const renderGaleria = () => {
+     if(!selectedPastaId) {
+        return (
+           <div style={{padding:"0 16px 16px"}}>
+             <button onClick={()=>openAdd("pastaGaleria", {})} style={{width:"100%",padding:14,borderRadius:12,border:`2px dashed var(--primary)`, opacity:0.8, background:"transparent",cursor:"pointer",color:C.primary,fontSize:14,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginBottom:16,fontFamily:"inherit"}}>
+                <Folder size={18}/> Nova Pasta de Fotos
+             </button>
+
+             <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:10}}>
+                {galeria.map(p => {
+                   const thumb = p.fotos && p.fotos.length > 0 ? p.fotos[0].url : null;
+                   return (
+                      <Card key={p.id} onClick={()=>setSelectedPastaId(p.id)} style={{padding:0, overflow:"hidden", display:"flex", flexDirection:"column", height:160, cursor:"pointer", border:`1px solid ${C.border}`}}>
+                         <div style={{flex:1, background:C.border, display:"flex", alignItems:"center", justifyContent:"center", overflow:"hidden"}}>
+                            {thumb ? (
+                               <img src={thumb} alt="capa" style={{width:"100%", height:"100%", objectFit:"cover"}} />
+                            ) : (
+                               <ImageIcon size={32} color={C.muted} opacity={0.5}/>
+                            )}
+                         </div>
+                         <div style={{padding:"10px 12px", background:C.card, display:"flex", justifyContent:"space-between", alignItems:"center"}}>
+                            <div style={{overflow:"hidden"}}>
+                               <p style={{fontSize:13, fontWeight:800, color:C.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"}}>{p.nome}</p>
+                               <p style={{fontSize:11, color:C.muted}}>{p.fotos?.length || 0} fotos</p>
+                            </div>
+                            <SmBtn onClick={(e)=>{e.stopPropagation(); openEdit("pastaGaleria", p);}} bg="transparent"><Edit2 size={13} color={C.muted}/></SmBtn>
+                         </div>
+                      </Card>
+                   );
+                })}
+             </div>
+             {galeria.length === 0 && <p style={{textAlign:"center", color:C.muted, marginTop:30}}>Nenhuma pasta criada. Adicione uma para começar.</p>}
+           </div>
+        );
+     }
+
+     const pasta = galeria.find(p => p.id === selectedPastaId);
+     if(!pasta) { setSelectedPastaId(null); return null; }
+
+     return (
+        <div style={{padding:"0 16px 16px"}}>
+           <div style={{display:"flex", alignItems:"center", gap:10, marginBottom:16}}>
+              <button onClick={()=>setSelectedPastaId(null)} style={{background:C.border, border:"none", width:36, height:36, borderRadius:10, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer"}}><ChevronLeft size={20} color={C.text}/></button>
+              <div style={{flex:1}}>
+                 <p style={{fontSize:18, fontWeight:800, color:C.text}}>{pasta.nome}</p>
+                 <p style={{fontSize:12, color:C.muted}}>Criada em {pasta.dataCriacao}</p>
+              </div>
+           </div>
+
+           <div style={{marginBottom:20}}>
+              <input type="file" id="galeria-upload" multiple accept="image/*" style={{display:"none"}} onChange={(e) => handleGaleriaFile(e, pasta.id)} />
+              <label htmlFor="galeria-upload" style={{width:"100%",padding:14,borderRadius:12,border:`2px dashed var(--primary)`, background:C.pLight,color:C.primary,fontSize:14,fontWeight:800,cursor:"pointer",display:isUploading?"none":"flex",alignItems:"center",justifyContent:"center",gap:8,fontFamily:"inherit"}}>
+                <Camera size={20}/> {isUploading ? "Enviando imagens..." : "Adicionar Fotos"}
+              </label>
+              {isUploading && <p style={{fontSize:13, color:C.primary, textAlign:"center", marginTop:8, fontWeight:600}}>Comprimindo e enviando para o Drive...</p>}
+           </div>
+
+           <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(100px, 1fr))", gap:8}}>
+              {(pasta.fotos || []).map((f, idx) => (
+                 <div key={f.id} onClick={()=>setViewerImage({fotos: pasta.fotos, index: idx})} style={{position:"relative", paddingTop:"100%", borderRadius:12, overflow:"hidden", background:C.border, cursor:"pointer"}}>
+                    <img src={f.url} alt={f.nome} style={{position:"absolute", top:0, left:0, width:"100%", height:"100%", objectFit:"cover"}} loading="lazy"/>
+                    <button onClick={(e) => deleteFoto(pasta.id, idx, e)} style={{position:"absolute", top:4, right:4, background:"rgba(0,0,0,0.6)", border:"none", width:24, height:24, borderRadius:6, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer"}}>
+                       <Trash2 size={12} color="#fff"/>
+                    </button>
+                 </div>
+              ))}
+           </div>
+           {(!pasta.fotos || pasta.fotos.length === 0) && <p style={{textAlign:"center", color:C.muted, marginTop:20}}>Pasta vazia.</p>}
+        </div>
+     );
   };
 
   const renderTarefas = () => {
@@ -2082,10 +2209,11 @@ export default function App() {
     {id:"dash",label:"Início",icon:Home},
     {id:"fin",label:"Finanças",icon:TrendingUp},
     {id:"obra",label:"Obra",icon:HardHat},
+    {id:"galeria",label:"Evolução",icon:Camera},
     {id:"cotacoes",label:"Cotações",icon:LinkIcon},
     {id:"mais",label:"Ferramentas",icon:MoreHorizontal},
   ];
-  const headings = {dash:"Minha Obra",fin:"Financeiro",obra:"Andamento",cotacoes:"Cotações",mais:"Ferramentas"};
+  const headings = {dash:"Minha Obra",fin:"Financeiro",obra:"Andamento",galeria:"Evolução da Obra",cotacoes:"Cotações",mais:"Ferramentas"};
 
   return (
     <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif",background:C.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}} data-theme={isDark ? "dark" : "light"}>
@@ -2170,6 +2298,7 @@ export default function App() {
           {tab==="dash" && renderDash()}
           {tab==="fin"  && renderFin()}
           {tab==="obra" && renderObra()}
+          {tab==="galeria" && renderGaleria()}
           {tab==="cotacoes" && renderCotacoes()}
           {tab==="mais" && renderMais()}
         </div>
@@ -2190,9 +2319,10 @@ export default function App() {
         })}
       </div>
 
-      {/* Modals */}
+      {/* Modals & Overlays */}
       {renderModal()}
       {renderExportOverlay()}
+      {renderImageViewer()}
       
       {/* Notifications Sheet */}
       {showNotifs && (
