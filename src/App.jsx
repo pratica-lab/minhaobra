@@ -1751,7 +1751,7 @@ export default function App() {
                      </div>
                    )}
                 </div>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center", border Top:`1px dashed ${C.border}`, paddingTop:6}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center", borderTop:`1px dashed ${C.border}`, paddingTop:6}}>
                   <p style={{fontSize:11,color:C.muted}}>Válido: {f.val}{f.obs&&` • ${f.obs}`}</p>
                   {!f.best && ( <button onClick={()=>setBest(q.id,f.id)} style={{fontSize:10,fontWeight:700,color:C.muted,border:`1px solid ${C.border}`,background:"transparent",borderRadius:6,padding:"2px 8px",cursor:"pointer",fontFamily:"inherit"}}>⭐ Marcar melhor</button> )}
                 </div>
