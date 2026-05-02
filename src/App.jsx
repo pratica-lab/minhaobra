@@ -373,14 +373,17 @@ export default function App() {
     if (type === "gasto" || type === "doc" || type === "ideia") data.anexos = [];
     setModal({type, data, parentId, editing:false});
   };
+  
   const openEdit = (type, item, parentId=null) => {
-    const data = {...item};
-    // Transforma legados em arrays automaticamente ao editar
+    // Clona e limpa qualquer undefined estrutural que venha do React
+    const data = JSON.parse(JSON.stringify(item));
+    
+    // Transforma legados em arrays automaticamente ao editar de forma segura
     if (type === "gasto" && !data.anexos) {
-      data.anexos = data.comp ? [{nome: data.comp, url: data.compUrl, driveId: data.compDriveId}] : [];
+      data.anexos = data.comp ? [{nome: data.comp, url: data.compUrl, driveId: data.compDriveId || ""}] : [];
     }
     if (type === "doc" && !data.anexos) {
-      data.anexos = data.nome ? [{nome: data.nome, url: data.url, driveId: data.driveId, tam: data.tam, comp: data.comp}] : [];
+      data.anexos = data.nome ? [{nome: data.nome, url: data.url, driveId: data.driveId || "", tam: data.tam || "", comp: data.comp || ""}] : [];
       data.titulo = data.titulo || data.nome;
     }
     if (type === "ideia" && !data.anexos) {
@@ -388,6 +391,7 @@ export default function App() {
     }
     setModal({type, data, parentId, editing:true});
   };
+  
   const closeModal = () => { setModal(null); setIsUploading(false); };
   const setF = (f,v) => setModal(m=>({...m,data:{...m.data,[f]:v}}));
   const d = modal?.data || {};
@@ -418,7 +422,11 @@ export default function App() {
       ordem: d.ordem ?? etapas.length
     };
     if(!modal.editing) { item.id = uid(); item.gastos = []; }
-    await setDoc(doc(db, "etapas", item.id.toString()), item);
+    
+    // Filtro de segurança nativo para evitar undefined error
+    const payload = JSON.parse(JSON.stringify(item));
+    await setDoc(doc(db, "etapas", item.id.toString()), payload);
+    
     logChange(modal.editing ? `Editou a etapa "${item.nome}"` : `Criou a etapa "${item.nome}"`); closeModal();
   };
 
@@ -571,8 +579,9 @@ export default function App() {
     let v = parseFloat(d.valor)||0, pagador = d.pagador || 'G', vG = 0, vL = 0;
     if(pagador === 'G') vG = v; else if(pagador === 'L') vL = v; else { vG = parseFloat(d.valorG)||(v/2); vL = parseFloat(d.valorL)||(v/2); v = vG + vL; }
     
-    // Removemos os campos duplicados legados já que agora trabalhamos 100% com o array anexos
-    const g = { id:d.id||uid(), desc:d.desc, valor:v, valorG:vG, valorL:vL, pagador, data:d.data||today(), recebedor:d.recebedor||"", tags:d.tags||"", obs:d.obs||"", anexos:d.anexos||[] };
+    // Construção segura e limpa do objeto, o JSON.parse(JSON.stringify) remove propriedades undefined silenciosas
+    const gRaw = { id:d.id||uid(), desc:d.desc, valor:v, valorG:vG, valorL:vL, pagador, data:d.data||today(), recebedor:d.recebedor||"", tags:d.tags||"", obs:d.obs||"", anexos:d.anexos||[] };
+    const g = JSON.parse(JSON.stringify(gRaw));
     
     // Se estiver editando e o usuário mudou a etapa do Gasto: devemos deletar da etapa antiga primeiro
     if (modal.editing && oldEtId !== etId) {
@@ -582,7 +591,8 @@ export default function App() {
           const oldE = etapas.find(x => x.id.toString() === oldEtId.toString());
           if (oldE) {
              const gastosLimpos = oldE.gastos.filter(x => x.id.toString() !== g.id.toString());
-             await setDoc(doc(db, "etapas", oldE.id.toString()), {...oldE, gastos: gastosLimpos});
+             // Sanitize payload para não passar undefined no setDoc
+             await setDoc(doc(db, "etapas", oldE.id.toString()), JSON.parse(JSON.stringify({...oldE, gastos: gastosLimpos})));
           }
        }
     }
@@ -601,7 +611,8 @@ export default function App() {
             // É um novo item OU ele acabou de ser movido para cá
             novosGastos = [...e.gastos, g];
          }
-         await setDoc(doc(db, "etapas", e.id.toString()), {...e, gastos: novosGastos});
+         // Sanitize payload
+         await setDoc(doc(db, "etapas", e.id.toString()), JSON.parse(JSON.stringify({...e, gastos: novosGastos})));
       }
     }
     
@@ -628,7 +639,10 @@ export default function App() {
         await deleteDoc(doc(db, "outrosGastos", d.id.toString()));
       } else {
         const e = etapas.find(x => x.id.toString() === d.etapaId?.toString());
-        if(e) await setDoc(doc(db, "etapas", e.id.toString()), {...e, gastos: e.gastos.filter(g => g.id.toString() !== d.id.toString())});
+        if(e) {
+           const payload = JSON.parse(JSON.stringify({...e, gastos: e.gastos.filter(g => g.id.toString() !== d.id.toString())}));
+           await setDoc(doc(db, "etapas", e.id.toString()), payload);
+        }
       }
       
       logChange(`Excluiu o gasto "${d.desc}"`); 
@@ -643,14 +657,14 @@ export default function App() {
     if(!d.t?.trim()) return alert("Tarefa é obrigatória");
     const item = {...d, depOk:!!d.depOk};
     if(!modal.editing) { item.id = uid(); item.done = false; }
-    await setDoc(doc(db, "checklist", item.id.toString()), item);
+    await setDoc(doc(db, "checklist", item.id.toString()), JSON.parse(JSON.stringify(item)));
     logChange(modal.editing ? `Editou a dependência "${item.t}"` : `Adicionou a dependência "${item.t}"`); closeModal();
   };
   const deleteCheck = async () => { await deleteDoc(doc(db, "checklist", d.id.toString())); logChange(`Excluiu a dependência "${d.t}"`); closeModal(); };
   const toggleCheck = async (id) => { 
      const item = checklist.find(c=>c.id===id);
      if(item) {
-        await setDoc(doc(db, "checklist", id.toString()), {...item, done: !item.done});
+        await setDoc(doc(db, "checklist", id.toString()), JSON.parse(JSON.stringify({...item, done: !item.done})));
         logChange(`Marcou a dependência "${item.t}" como ${!item.done ? 'concluída' : 'pendente'}`); 
      }
   };
@@ -658,8 +672,8 @@ export default function App() {
   const saveDoc = async () => {
     if(!d.titulo?.trim() && !d.nome?.trim()) return alert("Título do documento é obrigatório!");
     
-    // Converte os antigos para os novos campos e preserva caso existam
-    const item = {...d, id:d.id||uid(), data:d.data||todayFmt(), anexos: d.anexos||[], tags: d.tags||""};
+    const itemRaw = {...d, id:d.id||uid(), data:d.data||todayFmt(), anexos: d.anexos||[], tags: d.tags||""};
+    const item = JSON.parse(JSON.stringify(itemRaw));
     
     if(docTab==="contratos") { await setDoc(doc(db, "contratos", item.id.toString()), item); }
     else { await setDoc(doc(db, "projetos", item.id.toString()), item); }
@@ -695,7 +709,7 @@ export default function App() {
   const toggleSigned = async (id) => { 
      const item = contratos.find(c=>c.id===id);
      if(item) {
-        await setDoc(doc(db, "contratos", id.toString()), {...item, ok: !item.ok});
+        await setDoc(doc(db, "contratos", id.toString()), JSON.parse(JSON.stringify({...item, ok: !item.ok})));
         logChange(`Marcou o contrato "${item.titulo || item.nome}" como ${!item.ok ? 'assinado' : 'não assinado'}`); 
      }
   };
@@ -705,7 +719,7 @@ export default function App() {
     const item = {...d, itens: d.itens || []};
     if(!modal.editing) { item.id = uid(); item.st = d.st||"aberta"; item.forn = []; }
     const cotAtual = cotacoes.find(c=>c.id===item.id) || {};
-    await setDoc(doc(db, "cotacoes", item.id.toString()), {...cotAtual, ...item});
+    await setDoc(doc(db, "cotacoes", item.id.toString()), JSON.parse(JSON.stringify({...cotAtual, ...item})));
     logChange(modal.editing ? `Editou a cotação "${item.titulo}"` : `Criou a cotação "${item.titulo}"`); closeModal();
   };
   const deleteCotacao = async () => { await deleteDoc(doc(db, "cotacoes", d.id.toString())); logChange(`Excluiu a cotação "${d.titulo}"`); closeModal(); };
@@ -713,7 +727,7 @@ export default function App() {
      e.stopPropagation(); 
      const item = cotacoes.find(c=>c.id===qId);
      if(item) {
-        await setDoc(doc(db, "cotacoes", qId.toString()), {...item, st:"concluida"});
+        await setDoc(doc(db, "cotacoes", qId.toString()), JSON.parse(JSON.stringify({...item, st:"concluida"})));
         logChange(`Concluiu a cotação "${item.titulo}"`); 
      }
   };
@@ -724,14 +738,14 @@ export default function App() {
     const c = cotacoes.find(x=>x.id===modal.parentId);
     if(c) {
        const novosForn = modal.editing ? c.forn.map(x=>x.id===f.id?f:x) : [...c.forn,{...f,best:c.forn.length===0}];
-       await setDoc(doc(db, "cotacoes", c.id.toString()), {...c, forn: novosForn});
+       await setDoc(doc(db, "cotacoes", c.id.toString()), JSON.parse(JSON.stringify({...c, forn: novosForn})));
     }
     logChange(modal.editing ? `Editou o fornecedor "${f.nome}"` : `Adicionou o fornecedor "${f.nome}"`); closeModal();
   };
   const deleteForn = async () => { 
     const c = cotacoes.find(x=>x.id===modal.parentId);
     if(c) {
-       await setDoc(doc(db, "cotacoes", c.id.toString()), {...c, forn: c.forn.filter(f=>f.id!==d.id)});
+       await setDoc(doc(db, "cotacoes", c.id.toString()), JSON.parse(JSON.stringify({...c, forn: c.forn.filter(f=>f.id!==d.id)})));
     }
     logChange(`Excluiu o fornecedor "${d.nome}"`); closeModal(); 
   };
@@ -739,7 +753,7 @@ export default function App() {
      const c = cotacoes.find(x=>x.id===cotId);
      if(c) {
        const f = c.forn.find(x=>x.id===fnId);
-       await setDoc(doc(db, "cotacoes", c.id.toString()), {...c, forn: c.forn.map(x=>({...x,best:x.id===fnId}))});
+       await setDoc(doc(db, "cotacoes", c.id.toString()), JSON.parse(JSON.stringify({...c, forn: c.forn.map(x=>({...x,best:x.id===fnId}))})));
        logChange(`Marcou o fornecedor "${f?.nome}" como melhor opção`); 
      }
   };
@@ -748,7 +762,7 @@ export default function App() {
     if(!d.nome?.trim()) return alert("Nome é obrigatório");
     const item = {...d, ini:initials(d.nome), cor:d.cor||COR_OPTS[0], prestou:!!d.prestou, nota:d.prestou?parseInt(d.nota)||0:0, obs:d.obs||""};
     if(!modal.editing) item.id = uid();
-    await setDoc(doc(db, "contatos", item.id.toString()), item);
+    await setDoc(doc(db, "contatos", item.id.toString()), JSON.parse(JSON.stringify(item)));
     logChange(modal.editing ? `Editou o contato "${item.nome}"` : `Adicionou o contato "${item.nome}"`); closeModal();
   };
   const deleteContato = async () => { await deleteDoc(doc(db, "contatos", d.id.toString())); logChange(`Excluiu o contato "${d.nome}"`); closeModal(); };
@@ -759,7 +773,7 @@ export default function App() {
     const catFinal = d.cat || (safeCats.find(c=>c.ativa)?.nome || "Outros");
     const item = {...d, cor:d.cor||IDEIA_COLS[0], data:d.data||todayFmt(), tags:d.tags||[], links:d.links||[], cat:catFinal, anexos:d.anexos||[]};
     if(!modal.editing) item.id = uid();
-    await setDoc(doc(db, "ideias", item.id.toString()), item);
+    await setDoc(doc(db, "ideias", item.id.toString()), JSON.parse(JSON.stringify(item)));
     logChange(modal.editing ? `Editou a ideia "${item.t}"` : `Adicionou a ideia "${item.t}"`); closeModal();
   };
   
@@ -1043,7 +1057,7 @@ export default function App() {
               if(val){
                 if(!safeCats.find(c=>c?.nome?.toLowerCase() === val.toLowerCase())) {
                    const item = {id:uid(), nome:val, ativa:true};
-                   await setDoc(doc(db, "ideiaCats", item.id.toString()), item);
+                   await setDoc(doc(db, "ideiaCats", item.id.toString()), JSON.parse(JSON.stringify(item)));
                 }
                 setNewCatInput("");
               }
@@ -1054,12 +1068,12 @@ export default function App() {
             {safeCats.map(c => (
               <div key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",background:C.bg,borderRadius:10,border:`1px solid ${C.border}`}}>
                 <input value={c.nome} onChange={async e=>{
-                   await setDoc(doc(db, "ideiaCats", c.id.toString()), {...c, nome:e.target.value});
+                   await setDoc(doc(db, "ideiaCats", c.id.toString()), JSON.parse(JSON.stringify({...c, nome:e.target.value})));
                    ideias.forEach(async i => {
-                     if(i.cat===c.nome) await setDoc(doc(db, "ideias", i.id.toString()), {...i, cat:e.target.value});
+                     if(i.cat===c.nome) await setDoc(doc(db, "ideias", i.id.toString()), JSON.parse(JSON.stringify({...i, cat:e.target.value})));
                    });
                 }} style={{border:"none",background:"transparent",fontSize:14,fontWeight:700,color:c.ativa?C.text:C.muted,textDecoration:c.ativa?"none":"line-through",outline:"none",flex:1,fontFamily:"inherit"}}/>
-                <button onClick={async ()=>await setDoc(doc(db, "ideiaCats", c.id.toString()), {...c, ativa:!c.ativa})} style={{background:"none",border:"none",cursor:"pointer",fontSize:12,fontWeight:700,color:c.ativa?C.danger:C.success,fontFamily:"inherit"}}>
+                <button onClick={async ()=>await setDoc(doc(db, "ideiaCats", c.id.toString()), JSON.parse(JSON.stringify({...c, ativa:!c.ativa})))} style={{background:"none",border:"none",cursor:"pointer",fontSize:12,fontWeight:700,color:c.ativa?C.danger:C.success,fontFamily:"inherit"}}>
                   {c.ativa ? "Desativar" : "Ativar"}
                 </button>
               </div>
@@ -1079,7 +1093,7 @@ export default function App() {
         e.preventDefault();
         const nt = prompt("Digite a nova tag (ex: 🔴 Urgente):");
         if(nt && nt.trim() && !(ideiaTags||[]).includes(nt.trim())) {
-           await setDoc(doc(db, "meta", "ideiaTags"), { tags: [...(ideiaTags||[]), nt.trim()] });
+           await setDoc(doc(db, "meta", "ideiaTags"), JSON.parse(JSON.stringify({ tags: [...(ideiaTags||[]), nt.trim()] })));
            toggleTag(nt.trim());
         } else if (nt && nt.trim()) { toggleTag(nt.trim()); }
       };
@@ -1155,7 +1169,7 @@ export default function App() {
            if(!d.t?.trim()) return alert("Título obrigatório");
            const item = {...d, done:!!d.done, obs:d.obs||""};
            if(!editing) item.id = uid();
-           await setDoc(doc(db, "tarefas", item.id.toString()), item);
+           await setDoc(doc(db, "tarefas", item.id.toString()), JSON.parse(JSON.stringify(item)));
            logChange(editing ? `Editou a tarefa "${d.t}"` : `Criou a tarefa "${d.t}"`); closeModal();
          }}/>
          {editing && <Btn label="Excluir tarefa" onClick={async ()=>{await deleteDoc(doc(db, "tarefas", d.id.toString())); logChange(`Excluiu a tarefa "${d.t}"`); closeModal();}} color={C.danger} outline icon={<Trash2 size={15}/>}/>}
@@ -1170,7 +1184,7 @@ export default function App() {
            if(!d.t?.trim()) return alert("Título obrigatório");
            const item = {...d, data: d.data||todayFmt()};
            if(!editing) item.id = uid();
-           await setDoc(doc(db, "anotacoes", item.id.toString()), item);
+           await setDoc(doc(db, "anotacoes", item.id.toString()), JSON.parse(JSON.stringify(item)));
            logChange(editing ? `Editou a anotação "${d.t}"` : `Criou a anotação "${d.t}"`); closeModal();
          }}/>
          {editing && <Btn label="Excluir anotação" onClick={async ()=>{await deleteDoc(doc(db, "anotacoes", d.id.toString())); logChange(`Excluiu a anotação "${d.t}"`); closeModal();}} color={C.danger} outline icon={<Trash2 size={15}/>}/>}
@@ -1737,7 +1751,7 @@ export default function App() {
                      </div>
                    )}
                 </div>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center", borderTop:`1px dashed ${C.border}`, paddingTop:6}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center", border Top:`1px dashed ${C.border}`, paddingTop:6}}>
                   <p style={{fontSize:11,color:C.muted}}>Válido: {f.val}{f.obs&&` • ${f.obs}`}</p>
                   {!f.best && ( <button onClick={()=>setBest(q.id,f.id)} style={{fontSize:10,fontWeight:700,color:C.muted,border:`1px solid ${C.border}`,background:"transparent",borderRadius:6,padding:"2px 8px",cursor:"pointer",fontFamily:"inherit"}}>⭐ Marcar melhor</button> )}
                 </div>
@@ -1751,7 +1765,7 @@ export default function App() {
                   <button onClick={(e)=>concluirCotacao(e, q.id)} style={{flex:1, padding:10,borderRadius:8,border:`1.5px solid var(--success)`, opacity:0.8, background:C.sLight,color:C.success,fontWeight:800,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6,fontFamily:"inherit"}}><Check size={14}/> Concluir</button>
                )}
                {q.st === "concluida" && (
-                  <button onClick={async (e)=>{e.stopPropagation(); const c=cotacoes.find(x=>x.id===q.id); if(c) await setDoc(doc(db,"cotacoes",q.id.toString()),{...c,st:"aberta"}); logChange(`Reabriu a cotação "${q.titulo}"`);}} style={{flex:1, padding:10,borderRadius:8,border:`1.5px solid var(--warning)`, opacity:0.8, background:C.wLight,color:C.warning,fontWeight:800,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6,fontFamily:"inherit"}}>Reabrir</button>
+                  <button onClick={async (e)=>{e.stopPropagation(); const c=cotacoes.find(x=>x.id===q.id); if(c) { await setDoc(doc(db,"cotacoes",q.id.toString()),JSON.parse(JSON.stringify({...c,st:"aberta"}))); logChange(`Reabriu a cotação "${q.titulo}"`);}}} style={{flex:1, padding:10,borderRadius:8,border:`1.5px solid var(--warning)`, opacity:0.8, background:C.wLight,color:C.warning,fontWeight:800,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6,fontFamily:"inherit"}}>Reabrir</button>
                )}
             </div>
           </div>
