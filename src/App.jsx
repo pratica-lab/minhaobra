@@ -83,6 +83,9 @@ const fmtK = (n) => n>=1000 ? `R$ ${(n/1000).toFixed(0)}k` : `R$ ${n}`;
 const real = (e) => (e.gastos||[]).reduce((s,g)=>s+g.valor,0);
 const pBar = (r,o) => Math.min(100, o>0 ? Math.round((r/o)*100) : 0);
 
+// Novo Helper: Converte ID do Drive em link direto de exibição de imagem
+const getImgSrc = (driveId, fallbackUrl) => driveId ? `https://drive.google.com/uc?export=view&id=${driveId}` : fallbackUrl;
+
 /* ─── FILE HELPERS ─── */
 const compressFile = async (file) => {
   if (!file.type.startsWith("image/")) return file;
@@ -109,7 +112,7 @@ const compressFile = async (file) => {
             ctx.drawImage(img, 0, 0, width, height);
             canvas.toBlob((blob) => {
               clearTimeout(timeout);
-              if (!blob) return resolve(file);
+              if (!blob || blob.size === 0) return resolve(file); // Segurança extra caso retorne blob vazio
               resolve(new File([blob], file.name, { type: "image/jpeg", lastModified: Date.now() }));
             }, "image/jpeg", 0.7);
           } catch (e) {
@@ -1346,8 +1349,12 @@ export default function App() {
          </div>
          <p style={{position:"absolute",top:25,left:20,color:"#fff",fontSize:14,fontWeight:700}}>{index + 1} / {fotos.length}</p>
 
-         <img src={foto.url} style={{maxWidth:"100%",maxHeight:"80vh",objectFit:"contain"}} alt={foto.nome}/>
-         <p style={{position:"absolute",bottom:30,color:"#fff",fontSize:13, opacity:0.8}}>{foto.data} - {foto.nome}</p>
+         <img src={getImgSrc(foto.driveId, foto.url)} style={{maxWidth:"100%",maxHeight:"80vh",objectFit:"contain"}} alt={foto.nome}/>
+         
+         <div style={{position:"absolute",bottom:30,textAlign:"center", display:"flex", flexDirection:"column", gap:6}}>
+            <p style={{color:"#fff",fontSize:13, opacity:0.8}}>{foto.data} - {foto.nome}</p>
+            <a href={foto.url} target="_blank" rel="noreferrer" style={{color:"var(--primary)", fontSize:12, fontWeight:700, textDecoration:"none", display:"flex", alignItems:"center", gap:4, justifyContent:"center"}}><ExternalLink size={12}/> Abrir no Drive</a>
+         </div>
 
          {index > 0 && <button onClick={()=>setViewerImage({...viewerImage, index: index-1})} style={{position:"absolute",left:20,top:"50%",transform:"translateY(-50%)",background:"rgba(255,255,255,0.1)",border:"none",borderRadius:"50%",padding:10,color:"#fff",cursor:"pointer"}}><ChevronLeft size={30}/></button>}
          {index < fotos.length - 1 && <button onClick={()=>setViewerImage({...viewerImage, index: index+1})} style={{position:"absolute",right:20,top:"50%",transform:"translateY(-50%)",background:"rgba(255,255,255,0.1)",border:"none",borderRadius:"50%",padding:10,color:"#fff",cursor:"pointer"}}><ChevronRight size={30}/></button>}
@@ -1877,7 +1884,7 @@ export default function App() {
 
              <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:10}}>
                 {galeria.map(p => {
-                   const thumb = p.fotos && p.fotos.length > 0 ? p.fotos[0].url : null;
+                   const thumb = p.fotos && p.fotos.length > 0 ? getImgSrc(p.fotos[0].driveId, p.fotos[0].url) : null;
                    return (
                       <Card key={p.id} onClick={()=>setSelectedPastaId(p.id)} style={{padding:0, overflow:"hidden", display:"flex", flexDirection:"column", height:160, cursor:"pointer", border:`1px solid ${C.border}`}}>
                          <div style={{flex:1, background:C.border, display:"flex", alignItems:"center", justifyContent:"center", overflow:"hidden"}}>
@@ -1927,7 +1934,7 @@ export default function App() {
            <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(100px, 1fr))", gap:8}}>
               {(pasta.fotos || []).map((f, idx) => (
                  <div key={f.id} onClick={()=>setViewerImage({fotos: pasta.fotos, index: idx})} style={{position:"relative", paddingTop:"100%", borderRadius:12, overflow:"hidden", background:C.border, cursor:"pointer"}}>
-                    <img src={f.url} alt={f.nome} style={{position:"absolute", top:0, left:0, width:"100%", height:"100%", objectFit:"cover"}} loading="lazy"/>
+                    <img src={getImgSrc(f.driveId, f.url)} alt={f.nome} style={{position:"absolute", top:0, left:0, width:"100%", height:"100%", objectFit:"cover"}} loading="lazy"/>
                     <button onClick={(e) => deleteFoto(pasta.id, idx, e)} style={{position:"absolute", top:4, right:4, background:"rgba(0,0,0,0.6)", border:"none", width:24, height:24, borderRadius:6, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer"}}>
                        <Trash2 size={12} color="#fff"/>
                     </button>
