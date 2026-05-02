@@ -83,9 +83,6 @@ const fmtK = (n) => n>=1000 ? `R$ ${(n/1000).toFixed(0)}k` : `R$ ${n}`;
 const real = (e) => (e.gastos||[]).reduce((s,g)=>s+g.valor,0);
 const pBar = (r,o) => Math.min(100, o>0 ? Math.round((r/o)*100) : 0);
 
-// Novo Helper: Converte ID do Drive em link direto de exibição de imagem
-const getImgSrc = (driveId, fallbackUrl) => driveId ? `https://drive.google.com/uc?export=view&id=${driveId}` : fallbackUrl;
-
 /* ─── FILE HELPERS ─── */
 const compressFile = async (file) => {
   if (!file.type.startsWith("image/")) return file;
@@ -112,7 +109,7 @@ const compressFile = async (file) => {
             ctx.drawImage(img, 0, 0, width, height);
             canvas.toBlob((blob) => {
               clearTimeout(timeout);
-              if (!blob || blob.size === 0) return resolve(file); // Segurança extra caso retorne blob vazio
+              if (!blob || blob.size === 0) return resolve(file);
               resolve(new File([blob], file.name, { type: "image/jpeg", lastModified: Date.now() }));
             }, "image/jpeg", 0.7);
           } catch (e) {
@@ -135,26 +132,13 @@ const uploadToStorage = async (file, folder) => {
   if (!folder) throw new Error("Pasta de destino não especificada");
   
   try {
-    console.log(`[uploadToStorage] Enviando ${file.name} para ${folder}`);
     const res = await drive.uploadFile(file, folder);
-    console.log(`[uploadToStorage] Resultado:`, res);
     return res;
   } catch (err) {
-    console.error(`[uploadToStorage] Erro:`, err);
-    
-    if (err.message?.includes("popup_closed_by_user")) {
-      throw new Error("Você fechou a janela de autenticação. Por favor, autorize o acesso ao Google Drive.");
-    }
-    if (err.message?.includes("401")) {
-      throw new Error("Token inválido ou expirado. Recarregue a página e tente novamente.");
-    }
-    if (err.message?.includes("403")) {
-      throw new Error("Sem permissão para acessar Google Drive. Verifique as credenciais.");
-    }
-    if (err.message?.includes("DRIVE_CLIENT_ID")) {
-      throw new Error("Google Drive não está configurado. Contate o administrador.");
-    }
-    
+    if (err.message?.includes("popup_closed_by_user")) throw new Error("Você fechou a janela de autenticação. Por favor, autorize o acesso ao Google Drive.");
+    if (err.message?.includes("401")) throw new Error("Token inválido ou expirado. Recarregue a página e tente novamente.");
+    if (err.message?.includes("403")) throw new Error("Sem permissão para acessar Google Drive. Verifique as credenciais.");
+    if (err.message?.includes("DRIVE_CLIENT_ID")) throw new Error("Google Drive não está configurado. Contate o administrador.");
     throw err;
   }
 };
@@ -226,6 +210,62 @@ function Sheet({title,onClose,children}) {
   );
 }
 
+/* ─── AUTH IMAGE COMPONENT (BUSCA IMAGEM PRIVADA DO DRIVE API) ─── */
+const AuthImage = ({ driveId, fallbackUrl, alt, style, onClick }) => {
+  const [src, setSrc] = useState(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    let objectUrl = null;
+
+    if (!driveId) {
+      setSrc(fallbackUrl);
+      return;
+    }
+
+    const loadImg = async () => {
+      try {
+        const token = window.gapi?.client?.getToken()?.access_token;
+        if (token) {
+          const res = await fetch(`https://www.googleapis.com/drive/v3/files/${driveId}?alt=media`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          if (res.ok) {
+            const blob = await res.blob();
+            objectUrl = URL.createObjectURL(blob);
+            if (isMounted) setSrc(objectUrl);
+            return;
+          }
+        }
+        // Fallback final: miniatura pública do Google (funciona as vezes dependendo do cache)
+        if (isMounted) setSrc(`https://drive.google.com/thumbnail?id=${driveId}&sz=w1000`);
+      } catch (e) {
+        if (isMounted) setSrc(`https://drive.google.com/thumbnail?id=${driveId}&sz=w1000`);
+      }
+    };
+
+    loadImg();
+
+    return () => {
+      isMounted = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [driveId, fallbackUrl]);
+
+  return (
+    <img 
+      src={src || "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"} 
+      alt={alt} 
+      style={style} 
+      onClick={onClick} 
+      loading="lazy" 
+      onError={(e) => {
+        if (e.target.src !== fallbackUrl) e.target.src = fallbackUrl;
+      }} 
+    />
+  );
+};
+
 /* ══════════════════════════════════════════════════════════
    MAIN APP
 ══════════════════════════════════════════════════════════ */
@@ -254,7 +294,7 @@ export default function App() {
   
   /* ─── GALERIA STATE ─── */
   const [selectedPastaId, setSelectedPastaId] = useState(null);
-  const [viewerImage, setViewerImage] = useState(null); // { fotos: [], index: 0 }
+  const [viewerImage, setViewerImage] = useState(null); 
 
   /* ─── DATA STATE ─── */
   const [etapas,    setEtapas]    = useState([]);
@@ -1157,7 +1197,7 @@ export default function App() {
                      <p style={{fontSize:13,color:C.success,fontWeight:700, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"}}>{anexo.nome}</p>
                   </div>
                   <button onClick={() => setF("anexos", d.anexos.filter((_, i) => i !== idx))} style={{background:"none",border:"none",color:C.danger,fontWeight:700,cursor:"pointer",flexShrink:0,marginLeft:8}}>Remover</button>
-                </div>
+             </div>
              ))}
 
              <input type="file" id="ideia-upload" multiple style={{display:"none"}} onChange={handleIdeiaFile} />
@@ -1349,7 +1389,7 @@ export default function App() {
          </div>
          <p style={{position:"absolute",top:25,left:20,color:"#fff",fontSize:14,fontWeight:700}}>{index + 1} / {fotos.length}</p>
 
-         <img src={getImgSrc(foto.driveId, foto.url)} style={{maxWidth:"100%",maxHeight:"80vh",objectFit:"contain"}} alt={foto.nome}/>
+         <AuthImage driveId={foto.driveId} fallbackUrl={foto.url} alt={foto.nome} style={{maxWidth:"100%",maxHeight:"80vh",objectFit:"contain"}} />
          
          <div style={{position:"absolute",bottom:30,textAlign:"center", display:"flex", flexDirection:"column", gap:6}}>
             <p style={{color:"#fff",fontSize:13, opacity:0.8}}>{foto.data} - {foto.nome}</p>
@@ -1884,12 +1924,12 @@ export default function App() {
 
              <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:10}}>
                 {galeria.map(p => {
-                   const thumb = p.fotos && p.fotos.length > 0 ? getImgSrc(p.fotos[0].driveId, p.fotos[0].url) : null;
+                   const thumb = p.fotos && p.fotos.length > 0 ? p.fotos[0] : null;
                    return (
                       <Card key={p.id} onClick={()=>setSelectedPastaId(p.id)} style={{padding:0, overflow:"hidden", display:"flex", flexDirection:"column", height:160, cursor:"pointer", border:`1px solid ${C.border}`}}>
                          <div style={{flex:1, background:C.border, display:"flex", alignItems:"center", justifyContent:"center", overflow:"hidden"}}>
                             {thumb ? (
-                               <img src={thumb} alt="capa" style={{width:"100%", height:"100%", objectFit:"cover"}} />
+                               <AuthImage driveId={thumb.driveId} fallbackUrl={thumb.url} alt="capa" style={{width:"100%", height:"100%", objectFit:"cover"}} />
                             ) : (
                                <ImageIcon size={32} color={C.muted} opacity={0.5}/>
                             )}
@@ -1934,7 +1974,7 @@ export default function App() {
            <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(100px, 1fr))", gap:8}}>
               {(pasta.fotos || []).map((f, idx) => (
                  <div key={f.id} onClick={()=>setViewerImage({fotos: pasta.fotos, index: idx})} style={{position:"relative", paddingTop:"100%", borderRadius:12, overflow:"hidden", background:C.border, cursor:"pointer"}}>
-                    <img src={getImgSrc(f.driveId, f.url)} alt={f.nome} style={{position:"absolute", top:0, left:0, width:"100%", height:"100%", objectFit:"cover"}} loading="lazy"/>
+                    <AuthImage driveId={f.driveId} fallbackUrl={f.url} alt={f.nome} style={{position:"absolute", top:0, left:0, width:"100%", height:"100%", objectFit:"cover"}} />
                     <button onClick={(e) => deleteFoto(pasta.id, idx, e)} style={{position:"absolute", top:4, right:4, background:"rgba(0,0,0,0.6)", border:"none", width:24, height:24, borderRadius:6, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer"}}>
                        <Trash2 size={12} color="#fff"/>
                     </button>
