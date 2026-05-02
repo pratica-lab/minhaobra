@@ -86,7 +86,6 @@ const pBar = (r,o) => Math.min(100, o>0 ? Math.round((r/o)*100) : 0);
 const compressFile = async (file) => {
   if (!file.type.startsWith("image/")) return file;
   return new Promise((resolve) => {
-    // Safety timeout: if compression takes > 10s, return original file
     const timeout = setTimeout(() => {
       console.warn("Compression timeout");
       resolve(file);
@@ -156,30 +155,6 @@ const uploadToStorage = async (file, folder) => {
   }
 };
 
-/* ─── INITIAL DATA ─── */
-const INIT_ETAPAS = [
-  {id:1,nome:"Fundação",emoji:"🏗️",orc:42000,gastos:[{id:uid(),desc:"Serviços de fundação completos",valor:42000,valorG:21000,valorL:21000,pagador:"A",data:"2025-05-30",recebedor:"Construtora Base",tags:"mão-de-obra",obs:"",comp:"recibo.pdf"}],pct:100,st:"ok",dataIniEst:"2025-04",durEst:2,dataIniReal:"2025-04",durReal:2,dep:null},
-  {id:2,nome:"Estrutura",emoji:"🏛️",orc:60000,gastos:[{id:uid(),desc:"Concreto e aço estrutural",valor:38000,valorG:38000,valorL:0,pagador:"G",data:"2025-06-15",recebedor:"Aço Forte LTDA",tags:"material",obs:"",comp:"nf.pdf"},{id:uid(),desc:"Mão de obra",valor:25500,valorG:0,valorL:25500,pagador:"L",data:"2025-07-20",recebedor:"Empreiteiro Roberto",tags:"mão-de-obra",obs:"",comp:""}],pct:100,st:"ok",dataIniEst:"2025-05",durEst:3,dataIniReal:"2025-05",durReal:3,dep:1},
-  {id:3,nome:"Alvenaria",emoji:"🧱",orc:38000,gastos:[{id:uid(),desc:"Tijolos e argamassa",valor:22000,valorG:11000,valorL:11000,pagador:"A",data:"2025-07-10",recebedor:"Depósito Central",tags:"material",obs:"",comp:"comp.jpg"}],pct:100,st:"ok",dataIniEst:"2025-07",durEst:2,dataIniReal:"2025-07",durReal:2,dep:2},
-  {id:8,nome:"Revestimentos",emoji:"🪟",orc:72000,gastos:[{id:uid(),desc:"Porcelanato",valor:32000,valorG:32000,valorL:0,pagador:"G",data:"2026-02-10",recebedor:"Leroy",tags:"premium",obs:"",comp:""}],pct:75,st:"run",dataIniEst:"2026-01",durEst:4,dataIniReal:"2026-01",durReal:5,dep:null},
-];
-const INIT_OUTROS = [
-  {id:uid(),desc:"ITBI e Registro do Lote",valor:4500,valorG:2250,valorL:2250,pagador:"A",data:"2025-01-15",recebedor:"Cartório",tags:"taxas,terreno",obs:"",comp:"recibo_cartorio.pdf"}
-];
-const INIT_CHECK = [{id:1,t:"Comprar e instalar porcelanato",dep:"Contrapiso concluído",depOk:true,etapa:"Revestimentos",urg:"alta",done:false}];
-const INIT_CONTR = [{id:1,nome:"Contrato de Empreitada Geral",tam:"3.2 MB",comp:"1.1 MB",data:"15/03/2025",ok:true}];
-const INIT_PROJ = [{id:10,nome:"Projeto Arquitetônico Completo",tam:"18.4 MB",comp:"6.2 MB",data:"15/01/2025"}];
-const INIT_COT = [
-  {id:1, titulo:"Pisos e Revestimentos", itens:[{id:1, nome:"Porcelanato 60x60 Bege Polido", qtd:"120 m²"}], cat:"Revestimentos", st:"aberta", forn:[
-    {id:uid(),nome:"Cerâmica Brasil",precoVista:8990.00, precoPrazo: 9500.00, val:"30/04/2026",obs:"Frete grátis",best:true},
-    {id:uid(),nome:"Leroy Merlin",precoVista:10490.00, precoPrazo: 10490.00, val:"30/04/2026",obs:"10x s/ juros",best:false},
-  ]}
-];
-const INIT_CONT = [{id:1,nome:"Roberto Melo",papel:"Empreiteiro Geral",tel:"(11) 99823-4521",email:"roberto@meloconstrucoes.com.br",ini:"RM",cor:"#B8622A",prestou:true,nota:4,obs:"Bom de serviço, mas atrasa."}];
-const INIT_IDEIAS = [{id:1,t:"Bancada mármore Carrara",desc:"Mármore branco com veios cinzas.",cat:"Cozinha",cor:"var(--pLight)",tags:["💎 Premium", "✅ Decidido"],links:["https://br.pinterest.com/"],data:"12/02"}];
-const INIT_ANOTACOES = [{id:1, t:"Medidas e Padrões (Elétrica)", desc:"- Tomadas da cozinha: 20A\n- Restante: 10A", data:"10/05/2025"}];
-const INIT_TAREFAS = [{id:1, t:"Aprovar projeto na prefeitura", executor:"Arquiteta Fernanda", prazo:today(), done:false}];
-
 /* ─── SHARED COMPONENTS ─── */
 const Card = ({children,style={},onClick}) => (
   <div onClick={onClick} style={{background:C.card,borderRadius:16,padding:16,boxShadow:"0 1px 8px rgba(0,0,0,0.06)",cursor:onClick?"pointer":"default",...style}}>
@@ -187,7 +162,7 @@ const Card = ({children,style={},onClick}) => (
   </div>
 );
 const Badge = ({label,color,bg}) => (
-  <span style={{fontSize:11,fontWeight:700,color,background:bg,borderRadius:20,padding:"2px 10px"}}>{label}</span>
+  <span style={{fontSize:11,fontWeight:700,color,background:bg,borderRadius:20,padding:"2px 10px",display:"inline-block"}}>{label}</span>
 );
 const STitle = ({children,style={}}) => (
   <p style={{fontSize:12,fontWeight:700,color:C.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:10,...style}}>{children}</p>
@@ -252,16 +227,16 @@ function Sheet({title,onClose,children}) {
 ══════════════════════════════════════════════════════════ */
 export default function App() {
   /* ─── AUTH & THEME ─── */
-  const [user, setUser] = useState(null); // 'Luan' | 'Guilherme' | null
+  const [user, setUser] = useState(null);
   const [loginUser, setLoginUser] = useState("");
   const [loginPass, setLoginPass] = useState("");
   const [loginError, setLoginError] = useState("");
   const [isDark, setIsDark] = useState(false);
 
   /* ─── NOTIFICATIONS STATE ─── */
-  const [changeLog, setChangeLog] = useState([]); // {id, user, time, desc}
-  const [readNotifs, setReadNotifs] = useState([]); // array of notif IDs
-  const [deletedNotifs, setDeletedNotifs] = useState([]); // array of deleted notif IDs
+  const [changeLog, setChangeLog] = useState([]);
+  const [readNotifs, setReadNotifs] = useState([]);
+  const [deletedNotifs, setDeletedNotifs] = useState([]);
   const [showNotifs, setShowNotifs] = useState(false);
 
   useEffect(() => {
@@ -314,8 +289,6 @@ export default function App() {
       unsubCats(); unsubTags();
     };
   }, []);
-  
-
 
   /* ─── UI STATE ─── */
   const [modal,       setModal]       = useState(null);
@@ -325,13 +298,13 @@ export default function App() {
   const [searchGasto, setSearchGasto] = useState("");
   const [searchIdeia, setSearchIdeia] = useState("");
   const [searchAnotacao, setSearchAnotacao] = useState("");
+  const [searchDoc,   setSearchDoc]   = useState(""); // Novo buscador de documentos
   const [catFiltro,   setCatFiltro]   = useState("Todas");
   const [openEtapaId, setOpenEtapaId] = useState(null);
   const [showConcluidas, setShowConcluidas] = useState(false);
   const [newCatInput, setNewCatInput] = useState("");
   const [isSorting, setIsSorting] = useState(false);
-
-
+  const [isUploading, setIsUploading] = useState(false);
 
   /* ─── NOTIFICATIONS LOGIC ─── */
   const logChange = (desc) => {
@@ -340,22 +313,16 @@ export default function App() {
 
   const getActiveNotifs = () => {
     const notifs = [];
-    
-    // 1. Orçamento Extrapolado
     etapas.forEach(e => {
        if(real(e) > e.orc && e.orc > 0) {
           notifs.push({ id: `orc-${e.id}`, title: "Orçamento Extrapolado", desc: `A etapa ${e.nome} excedeu o orçamento estimado em ${fmt(real(e) - e.orc)}.`, type: "danger" });
        }
     });
-
-    // 2. Tarefa Atrasada
     tarefas.forEach(t => {
        if(!t.done && t.prazo && t.prazo < today()) {
           notifs.push({ id: `prz-${t.id}`, title: "Prazo Vencido", desc: `A tarefa "${t.t}" está atrasada.`, type: "warning" });
        }
     });
-
-    // 3. Modificações do Parceiro (Última hora)
     if(user) {
       const partnerChanges = changeLog.filter(c => c.user !== user && (Date.now() - c.time) < 3600000);
       if(partnerChanges.length > 0) {
@@ -401,8 +368,23 @@ export default function App() {
   };
 
   /* ─── MODAL HELPERS ─── */
-  const openAdd  = (type, defaults={}, parentId=null) => setModal({type,data:{...defaults},parentId,editing:false});
-  const openEdit = (type, item, parentId=null)        => setModal({type,data:{...item},parentId,editing:true});
+  const openAdd  = (type, defaults={}, parentId=null) => {
+    const data = {...defaults};
+    if (type === "gasto" || type === "doc") data.anexos = [];
+    setModal({type, data, parentId, editing:false});
+  };
+  const openEdit = (type, item, parentId=null) => {
+    const data = {...item};
+    // Transforma legados em arrays automaticamente ao editar
+    if (type === "gasto" && !data.anexos) {
+      data.anexos = data.comp ? [{nome: data.comp, url: data.compUrl, driveId: data.compDriveId}] : [];
+    }
+    if (type === "doc" && !data.anexos) {
+      data.anexos = data.nome ? [{nome: data.nome, url: data.url, driveId: data.driveId, tam: data.tam, comp: data.comp}] : [];
+      data.titulo = data.titulo || data.nome;
+    }
+    setModal({type, data, parentId, editing:true});
+  };
   const closeModal = () => { setModal(null); setIsUploading(false); };
   const setF = (f,v) => setModal(m=>({...m,data:{...m.data,[f]:v}}));
   const d = modal?.data || {};
@@ -444,14 +426,12 @@ export default function App() {
     const newIdx = idx + delta;
     if (newIdx < 0 || newIdx >= newList.length) return;
 
-    // Swapping elements in the local array
     const [movedItem] = newList.splice(idx, 1);
     newList.splice(newIdx, 0, movedItem);
 
     setIsUploading(true);
     try {
       const batch = writeBatch(db);
-      // Normalize all orders based on the new array position
       newList.forEach((item, i) => {
         batch.update(doc(db, "etapas", item.id.toString()), { ordem: i });
       });
@@ -466,97 +446,84 @@ export default function App() {
 
   const deleteEtapa = async () => { await deleteDoc(doc(db, "etapas", d.id.toString())); logChange(`Excluiu a etapa "${d.nome}"`); closeModal(); };
 
-  /* ─── DOCUMENT DOWNLOAD ─── */
-  const downloadDoc = (f) => {
-    const fileUrl = f.file || f.url; 
-    if (!fileUrl) return alert("Arquivo não encontrado.");
-    window.open(fileUrl, "_blank");
-  };
-
-  const [isUploading, setIsUploading] = useState(false);
-
+  /* ─── UPLOADS MÚLTIPLOS ─── */
   const handleFileChange = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+    const files = Array.from(e.target.files);
+    if (!files.length) return;
 
-    const maxSize = 100 * 1024 * 1024; // 100MB
-    if (file.size > maxSize) {
-      return alert(`Arquivo muito grande. Máximo: 100MB. Seu arquivo: ${(file.size / 1024 / 1024).toFixed(2)}MB`);
+    const maxSize = 100 * 1024 * 1024;
+    for (let file of files) {
+      if (file.size > maxSize) {
+        return alert(`O arquivo ${file.name} é muito grande. Máximo de 100MB por arquivo.`);
+      }
     }
 
     setIsUploading(true);
     
-    // Usa setTimeout para escapar do contexto bloqueado do file input
-    // Isso permite que a popup de autenticação do Google abra corretamente
     window.setTimeout(async () => {
       try {
-        console.log(`[Upload] Iniciando upload de ${file.name} (${(file.size / 1024 / 1024).toFixed(2)}MB)`);
-        
-        // Pré-autentica se necessário em contexto seguro
         await drive.preAuthenticateIfNeeded();
-        
         const folder = docTab === "contratos" ? "contratos" : "projetos";
-        const res = await uploadToStorage(file, folder);
-        console.log(`[Upload] Sucesso:`, res);
-        setF("url", res.url);
-        setF("nome", res.name);
-        setF("tam", (file.size / 1024 / 1024).toFixed(2) + " MB");
-        setF("comp", res.size);
-        setF("driveId", res.id); // Salva o ID do arquivo no Google Drive
+        const novosAnexos = [];
+        
+        for (let file of files) {
+          console.log(`[Upload] Iniciando ${file.name}`);
+          const res = await uploadToStorage(file, folder);
+          novosAnexos.push({
+             nome: res.name, url: res.url, driveId: res.id, 
+             tam: (file.size / 1024 / 1024).toFixed(2) + " MB", comp: res.size
+          });
+        }
+        
+        setF("anexos", [...(d.anexos || []), ...novosAnexos]);
       } catch (err) {
         console.error(`[Upload] Erro:`, err);
         const errorMsg = err.message?.includes('autenticação') || err.message?.includes('token') 
           ? "Erro de autenticação. Recarregue a página e tente novamente."
-          : err.message?.includes('timeout') || err.message?.includes('Timeout')
-          ? "Upload demorou muito. Verifique sua conexão e tente novamente."
-          : err.message?.includes('401') || err.message?.includes('403')
-          ? "Sem permissão para fazer upload. Verifique as credenciais do Google Drive."
           : `Erro no upload: ${err.message}`;
         alert(errorMsg);
       } finally {
         setIsUploading(false);
       }
-    }, 50); // pequeno delay para garantir que saiu do contexto do file input
+    }, 50);
   };
 
   const handleGastoFile = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+    const files = Array.from(e.target.files);
+    if (!files.length) return;
 
-    const maxSize = 100 * 1024 * 1024; // 100MB
-    if (file.size > maxSize) {
-      return alert(`Arquivo muito grande. Máximo: 100MB. Seu arquivo: ${(file.size / 1024 / 1024).toFixed(2)}MB`);
+    const maxSize = 100 * 1024 * 1024;
+    for (let file of files) {
+      if (file.size > maxSize) {
+        return alert(`O arquivo ${file.name} é muito grande. Máximo de 100MB por arquivo.`);
+      }
     }
 
     setIsUploading(true);
-    
-    // Usa setTimeout para escapar do contexto bloqueado do file input
     window.setTimeout(async () => {
       try {
-        console.log(`[Upload] Iniciando upload de ${file.name} (${(file.size / 1024 / 1024).toFixed(2)}MB)`);
-        
-        // Pré-autentica se necessário em contexto seguro
         await drive.preAuthenticateIfNeeded();
+        const novosAnexos = [];
         
-        const res = await uploadToStorage(file, "gastos");
-        console.log(`[Upload] Sucesso:`, res);
-        setF("compUrl", res.url);
-        setF("comp", res.name);
-        setF("compDriveId", res.id); // Salva o ID do arquivo no Google Drive
+        for (let file of files) {
+          console.log(`[Upload] Iniciando ${file.name}`);
+          const res = await uploadToStorage(file, "gastos");
+          novosAnexos.push({
+             nome: res.name, url: res.url, driveId: res.id
+          });
+        }
+        
+        setF("anexos", [...(d.anexos || []), ...novosAnexos]);
       } catch (err) {
         console.error(`[Upload] Erro:`, err);
         const errorMsg = err.message?.includes('autenticação') || err.message?.includes('token')
           ? "Erro de autenticação. Recarregue a página e tente novamente."
-          : err.message?.includes('timeout') || err.message?.includes('Timeout')
-          ? "Upload demorou muito. Verifique sua conexão e tente novamente."
-          : err.message?.includes('401') || err.message?.includes('403')
-          ? "Sem permissão para fazer upload. Verifique as credenciais do Google Drive."
           : `Erro no upload: ${err.message}`;
         alert(errorMsg);
       } finally {
         setIsUploading(false);
       }
-    }, 50); // pequeno delay para garantir que saiu do contexto do file input
+    }, 50);
   };
 
   const [showAllPayments, setShowAllPayments] = useState(false);
@@ -566,7 +533,9 @@ export default function App() {
     const etId = parseInt(d.etapaId);
     let v = parseFloat(d.valor)||0, pagador = d.pagador || 'G', vG = 0, vL = 0;
     if(pagador === 'G') vG = v; else if(pagador === 'L') vL = v; else { vG = parseFloat(d.valorG)||(v/2); vL = parseFloat(d.valorL)||(v/2); v = vG + vL; }
-    const g = { id:d.id||uid(), desc:d.desc, valor:v, valorG:vG, valorL:vL, pagador, data:d.data||today(), recebedor:d.recebedor||"", tags:d.tags||"", obs:d.obs||"", comp:d.comp||"", compUrl:d.compUrl||"" };
+    
+    // Remove as referências únicas para manter a limpeza dos dados (retrocompatibilidade já é lida e convertida para 'anexos')
+    const g = { id:d.id||uid(), desc:d.desc, valor:v, valorG:vG, valorL:vL, pagador, data:d.data||today(), recebedor:d.recebedor||"", tags:d.tags||"", obs:d.obs||"", anexos:d.anexos||[] };
     
     if (etId === 999) {
       await setDoc(doc(db, "outrosGastos", g.id.toString()), g);
@@ -581,15 +550,17 @@ export default function App() {
   };
   
   const deleteGasto = async () => { 
-    // Mostra confirmação antes de excluir
-    const confirmacao = window.confirm(`Tem certeza que deseja excluir o gasto "${d.desc}"?\n\nEsta ação não pode ser desfeita${d.compDriveId ? ' e também removerá o comprovante do Google Drive' : ''}.`);
+    const confirmacao = window.confirm(`Tem certeza que deseja excluir o gasto "${d.desc}"?\n\nEsta ação não pode ser desfeita e também removerá os comprovantes anexos do Google Drive.`);
     
     if (!confirmacao) return;
     
     try {
-      // Exclui comprovante do Google Drive se existir
-      if (d.compDriveId) {
-        console.log(`[Exclusão] Removendo comprovante do Google Drive: ${d.compDriveId}`);
+      // Exclui comprovantes do Google Drive
+      if (d.anexos && d.anexos.length > 0) {
+        for (const a of d.anexos) {
+           if (a.driveId) await drive.deleteFile(a.driveId);
+        }
+      } else if (d.compDriveId) {
         await drive.deleteFile(d.compDriveId);
       }
       
@@ -608,7 +579,6 @@ export default function App() {
       alert(`Erro ao excluir gasto: ${error.message}`);
     }
   }; 
-  };
 
   const saveCheck = async () => {
     if(!d.t?.trim()) return alert("Tarefa é obrigatória");
@@ -627,41 +597,47 @@ export default function App() {
   };
 
   const saveDoc = async () => {
-    if(!d.nome?.trim()) return alert("Selecione e anexe um arquivo antes de salvar!");
-    const item = {...d, id:d.id||uid(), data:d.data||todayFmt()};
+    if(!d.titulo?.trim() && !d.nome?.trim()) return alert("Título do documento é obrigatório!");
+    
+    // Converte os antigos para os novos campos e preserva caso existam
+    const item = {...d, id:d.id||uid(), data:d.data||todayFmt(), anexos: d.anexos||[], tags: d.tags||""};
+    
     if(docTab==="contratos") { await setDoc(doc(db, "contratos", item.id.toString()), item); }
     else { await setDoc(doc(db, "projetos", item.id.toString()), item); }
-    logChange(modal.editing ? `Editou o documento "${item.nome}"` : `Adicionou o documento "${item.nome}"`); closeModal();
+    
+    logChange(modal.editing ? `Editou o documento "${item.titulo || item.nome}"` : `Adicionou o documento "${item.titulo || item.nome}"`); closeModal();
   };
+
   const excluirDocumento = async () => { 
-    // Mostra confirmação antes de excluir
-    const confirmacao = window.confirm(`Tem certeza que deseja excluir o documento "${d.nome}"?\n\nEsta ação não pode ser desfeita${d.driveId ? ' e também removerá o arquivo do Google Drive' : ''}.`);
+    const confirmacao = window.confirm(`Tem certeza que deseja excluir o documento "${d.titulo || d.nome}"?\n\nEsta ação não pode ser desfeita e também removerá os arquivos anexos do Google Drive.`);
     
     if (!confirmacao) return;
     
     try {
-      // Exclui do Google Drive se existir driveId
-      if (d.driveId) {
-        console.log(`[Exclusão] Removendo arquivo do Google Drive: ${d.driveId}`);
+      if (d.anexos && d.anexos.length > 0) {
+        for (const a of d.anexos) {
+           if (a.driveId) await drive.deleteFile(a.driveId);
+        }
+      } else if (d.driveId) {
         await drive.deleteFile(d.driveId);
       }
       
-      // Exclui do Firestore
       if(docTab==="contratos") await deleteDoc(doc(db, "contratos", d.id.toString()));
       else await deleteDoc(doc(db, "projetos", d.id.toString()));
       
-      logChange(`Excluiu o documento "${d.nome}"`); 
+      logChange(`Excluiu o documento "${d.titulo || d.nome}"`); 
       closeModal();
     } catch (error) {
       console.error(`[Exclusão] Erro ao excluir documento:`, error);
       alert(`Erro ao excluir documento: ${error.message}`);
     }
   };
+
   const toggleSigned = async (id) => { 
      const item = contratos.find(c=>c.id===id);
      if(item) {
         await setDoc(doc(db, "contratos", id.toString()), {...item, ok: !item.ok});
-        logChange(`Marcou o contrato "${item.nome}" como ${!item.ok ? 'assinado' : 'não assinado'}`); 
+        logChange(`Marcou o contrato "${item.titulo || item.nome}" como ${!item.ok ? 'assinado' : 'não assinado'}`); 
      }
   };
 
@@ -813,23 +789,28 @@ export default function App() {
         <FInput label="Data do pagamento" type="date" value={d.data||today()} onChange={v=>setF("data",v)}/>
         <FInput label="Tags (separadas por vírgula)" value={d.tags} onChange={v=>setF("tags",v)} placeholder="Ex: material, urgente"/>
         <FTextarea label="Observações" value={d.obs} onChange={v=>setF("obs",v)} rows={2} placeholder="Detalhes do pagamento..."/>
+        
+        {/* Upload Multiplo de Comprovantes */}
         <div style={{marginBottom:14}}>
-          <p style={{fontSize:12,fontWeight:700,color:C.muted,marginBottom:6}}>Comprovante</p>
-          {d.comp ? (
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:C.sLight,padding:"10px 14px",borderRadius:10}}>
-              <div style={{display:"flex",alignItems:"center",gap:6}}><FileText size={16} color={C.success}/><p style={{fontSize:13,color:C.success,fontWeight:700}}>{d.comp}</p></div>
-              <button onClick={()=>{setF("comp",""); setF("compUrl","");}} style={{background:"none",border:"none",color:C.danger,fontWeight:700,cursor:"pointer"}}>Remover</button>
-            </div>
-          ) : (
-            <>
-              <input type="file" id="comp-upload" style={{display:"none"}} onChange={handleGastoFile} />
-              <label htmlFor="comp-upload" style={{width:"100%",padding:12,borderRadius:10,border:`1.5px dashed ${C.border}`,background:C.bg,color:C.text,fontSize:14,fontWeight:600,cursor:"pointer",display:isUploading?"none":"flex",alignItems:"center",justifyContent:"center",gap:8,fontFamily:"inherit"}}>
-                <Upload size={16}/> {isUploading ? "Enviando..." : "Anexar Comprovante"}
-              </label>
-              {isUploading && <p style={{fontSize:12, color:C.primary, textAlign:"center", marginTop:4}}>Enviando arquivo...</p>}
-            </>
-          )}
+          <p style={{fontSize:12,fontWeight:700,color:C.muted,marginBottom:6}}>Comprovantes Anexos</p>
+          
+          {(d.anexos||[]).map((anexo, idx) => (
+             <div key={idx} style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:C.sLight,padding:"10px 14px",borderRadius:10,marginBottom:6}}>
+               <div style={{display:"flex",alignItems:"center",gap:6, overflow:"hidden"}}>
+                  <FileText size={16} color={C.success} style={{flexShrink:0}}/>
+                  <p style={{fontSize:13,color:C.success,fontWeight:700, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"}}>{anexo.nome}</p>
+               </div>
+               <button onClick={() => setF("anexos", d.anexos.filter((_, i) => i !== idx))} style={{background:"none",border:"none",color:C.danger,fontWeight:700,cursor:"pointer",flexShrink:0,marginLeft:8}}>Remover</button>
+             </div>
+          ))}
+
+          <input type="file" id="comp-upload" multiple style={{display:"none"}} onChange={handleGastoFile} />
+          <label htmlFor="comp-upload" style={{width:"100%",padding:12,borderRadius:10,border:`1.5px dashed ${C.border}`,background:C.bg,color:C.text,fontSize:14,fontWeight:600,cursor:"pointer",display:isUploading?"none":"flex",alignItems:"center",justifyContent:"center",gap:8,fontFamily:"inherit"}}>
+            <Upload size={16}/> {isUploading ? "Enviando..." : "Anexar Comprovante(s)"}
+          </label>
+          {isUploading && <p style={{fontSize:12, color:C.primary, textAlign:"center", marginTop:4}}>Enviando arquivo(s)...</p>}
         </div>
+
         <Btn label="Salvar Pagamento" onClick={saveGasto}/>
         {editing && <Btn label="Excluir lançamento" onClick={deleteGasto} color={C.danger} outline icon={<Trash2 size={15}/>}/>}
       </Sheet>
@@ -853,22 +834,29 @@ export default function App() {
     if(type==="doc") {
       return (
         <Sheet title={editing?"Editar Documento":"Novo Documento"} onClose={closeModal}>
-          <FInput label="Título do documento (Identificação)" value={d.titulo} onChange={v=>setF("titulo",v)} placeholder="Ex: Contrato Pedreiro, Planta Hidráulica..."/>
-          {d.nome ? (
-             <div style={{background:C.sLight, border:`1.5px solid var(--success)`, padding:"16px", borderRadius:12, marginBottom:16, textAlign:"center"}}>
-                <FileText size={32} color={C.success} style={{marginBottom:8, margin:"0 auto"}}/>
-                <p style={{fontSize:15, fontWeight:800, color:C.text, marginBottom:4, wordBreak:"break-all"}}>{d.nome}</p>
-                <button onClick={()=>{setF("nome","");setF("url","");}} style={{marginTop:12, background:"transparent", border:`1px solid var(--danger)`, opacity:0.5, color:C.danger, padding:"4px 12px", borderRadius:6, fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"inherit"}}>Remover anexo</button>
-             </div>
-          ) : (
-             <div style={{marginBottom:20}}>
-               <input type="file" id="doc-upload" style={{display:"none"}} onChange={handleFileChange} />
-               <label htmlFor="doc-upload" style={{width:"100%",padding:20,borderRadius:12,border:`2px dashed var(--primary)`, opacity:0.6, background:C.pLight,color:C.primary,fontSize:14,fontWeight:800,cursor:"pointer",flexDirection:"column",alignItems:"center",gap:8,fontFamily:"inherit", display:isUploading?"none":"flex"}}>
-                 <Upload size={24}/> {isUploading ? "Enviando..." : "Selecionar Arquivo"}
-               </label>
-               {isUploading && <p style={{fontSize:12, color:C.primary, textAlign:"center", marginTop:8}}>Enviando arquivo para o servidor...</p>}
-             </div>
-          )}
+          <FInput label="Título do documento (Identificação)" value={d.titulo} onChange={v=>setF("titulo",v)} placeholder="Ex: Contrato Pedreiro, Planta Hidráulica..." required/>
+          <FInput label="Tags (separadas por vírgula)" value={d.tags} onChange={v=>setF("tags",v)} placeholder="Ex: hidraulica, projeto, urgente"/>
+          
+          <div style={{marginBottom:20}}>
+             <p style={{fontSize:12,fontWeight:700,color:C.muted,marginBottom:6}}>Arquivos Anexos</p>
+             
+             {(d.anexos||[]).map((anexo, idx) => (
+                <div key={idx} style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:C.sLight,padding:"10px 14px",borderRadius:10,marginBottom:6, border:`1px solid var(--success)`}}>
+                  <div style={{display:"flex",alignItems:"center",gap:6, overflow:"hidden"}}>
+                     <FileText size={16} color={C.success} style={{flexShrink:0}}/>
+                     <p style={{fontSize:13,color:C.success,fontWeight:800, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"}}>{anexo.nome}</p>
+                  </div>
+                  <button onClick={() => setF("anexos", d.anexos.filter((_, i) => i !== idx))} style={{background:"none",border:"none",color:C.danger,fontWeight:700,cursor:"pointer",flexShrink:0,marginLeft:8}}>Remover</button>
+                </div>
+             ))}
+
+             <input type="file" id="doc-upload" multiple style={{display:"none"}} onChange={handleFileChange} />
+             <label htmlFor="doc-upload" style={{width:"100%",padding:20,borderRadius:12,border:`2px dashed var(--primary)`, opacity:0.6, background:C.pLight,color:C.primary,fontSize:14,fontWeight:800,cursor:"pointer",flexDirection:"column",alignItems:"center",gap:8,fontFamily:"inherit", display:isUploading?"none":"flex"}}>
+               <Upload size={24}/> {isUploading ? "Enviando..." : "Anexar Arquivos"}
+             </label>
+             {isUploading && <p style={{fontSize:12, color:C.primary, textAlign:"center", marginTop:8}}>Enviando arquivo(s) para o servidor...</p>}
+          </div>
+
           <FInput label="Data de envio (dd/mm/aaaa)" value={d.data} onChange={v=>setF("data",v)} placeholder="ex: 15/04/2026"/>
           {docTab==="contratos" && (
             <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,padding:"10px 12px",background:C.bg,borderRadius:10}}>
@@ -1092,8 +1080,8 @@ export default function App() {
          {editing && <Btn label="Excluir anotação" onClick={async ()=>{await deleteDoc(doc(db, "anotacoes", d.id.toString())); logChange(`Excluiu a anotação "${d.t}"`); closeModal();}} color={C.danger} outline icon={<Trash2 size={15}/>}/>}
        </Sheet>
     );
-    // Modal de configuração do Google Drive removido - agora é automático
-
+    
+    // Configuração Google Drive: Nenhuma interface exposta, funciona integrado e automático
     return null;
   };
 
@@ -1106,8 +1094,6 @@ export default function App() {
     
     return (
       <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:1000,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:20,gap:16, overflowY:"auto"}}>
-        
-        {/* Painel de Opções */}
         <div style={{width:"100%",maxWidth:520,background:C.card,borderRadius:16,padding:20,boxShadow:"0 10px 40px rgba(0,0,0,0.3)"}}>
            <p style={{fontSize:14, fontWeight:800, color:C.text, marginBottom:12}}>Opções de Envio</p>
            <div style={{display:"flex", flexDirection:"column", gap:12}}>
@@ -1124,9 +1110,7 @@ export default function App() {
         </div>
 
         <div style={{width:"100%",maxWidth:520,background:"#fff",borderRadius:20,overflow:"hidden",boxShadow:"0 20px 60px rgba(0,0,0,0.4)"}}>
-          {/* Documento para captura */}
           <div ref={cotacaoExportRef} style={{background:"#ffffff",padding:32,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-            {/* Header */}
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:24,paddingBottom:20,borderBottom:"2px solid #f0e9e0"}}>
               <div>
                 <div style={{fontSize:28,marginBottom:4}}>🏗️</div>
@@ -1140,11 +1124,9 @@ export default function App() {
               </div>
             </div>
 
-            {/* Título */}
             <p style={{fontSize:18,fontWeight:800,color:"#1A120D",marginBottom:6}}>{q.titulo}</p>
             <p style={{fontSize:12,color:"#8C7A6E",marginBottom:20}}>Solicitamos orçamento para os itens abaixo. Por favor, preencha os valores e retorne.</p>
 
-            {/* Itens */}
             {q.itens && q.itens.length > 0 && (
               <div style={{marginBottom:24}}>
                 <p style={{fontSize:11,fontWeight:700,color:"#B8622A",marginBottom:10,textTransform:"uppercase",letterSpacing:0.5}}>Itens da Cotação</p>
@@ -1169,7 +1151,6 @@ export default function App() {
               </div>
             )}
 
-            {/* Preços já recebidos (se houver) */}
             {displayedForn.length > 0 && (
               <div style={{marginBottom:24}}>
                 <p style={{fontSize:11,fontWeight:700,color:"#4A7A56",marginBottom:10,textTransform:"uppercase",letterSpacing:0.5}}>Propostas Recebidas</p>
@@ -1182,7 +1163,6 @@ export default function App() {
               </div>
             )}
 
-            {/* Rodapé */}
             <div style={{borderTop:"1px solid #E8DDD3",paddingTop:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <div>
                 <p style={{fontSize:11,color:"#8C7A6E"}}>Validade da proposta: <strong>30 dias</strong></p>
@@ -1195,7 +1175,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* Botões */}
         <div style={{display:"flex",gap:12,width:"100%",maxWidth:520, paddingBottom:20}}>
           <button onClick={()=>setExportingCot(null)} style={{flex:1,padding:"14px",borderRadius:12,border:"none",background:"rgba(255,255,255,0.15)",color:"#fff",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>
             ✕ Cancelar
@@ -1212,7 +1191,6 @@ export default function App() {
      VIEW RENDERERS
   ═══════════════════════════════════ */
 
-  // Se não estiver logado, exibe tela de Login
   if(!user) {
     return (
       <div style={{fontFamily:"'Plus Jakarta Sans',sans-serif", minHeight:"100vh", background:C.bg, display:"flex", alignItems:"center", justifyContent:"center", padding:20}} data-theme={isDark?"dark":"light"}>
@@ -1239,33 +1217,49 @@ export default function App() {
     );
   }
 
-  const GastoItem = ({g, e}) => (
-    <div style={{padding:"14px 0",borderBottom:`1px solid ${C.border}`}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}>
-        <div style={{flex:1, paddingRight:10}}>
-          <p style={{fontSize:14,fontWeight:800,color:C.text}}>{g.desc}</p>
-          {e && <p style={{fontSize:11,fontWeight:700,color:C.primary,marginTop:2}}>{e.emoji} {e.nome}</p>}
-          {g.recebedor && <p style={{fontSize:11,color:C.muted,marginTop:2}}>Recebedor: <strong>{g.recebedor}</strong></p>}
-        </div>
-        <div style={{display:"flex",alignItems:"center",gap:8}}>
-          <div style={{textAlign:"right"}}>
-            <p style={{fontSize:15,fontWeight:800,color:C.text}}>{fmt(g.valor)}</p>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:4,marginTop:2}}>
-              <User size={10} color={C.muted}/>
-              <p style={{fontSize:10,color:C.muted,fontWeight:600}}>{g.pagador === 'G' ? "Gui pagou" : g.pagador === 'L' ? "Luan pagou" : "Dividido"}</p>
-            </div>
+  const GastoItem = ({g, e}) => {
+    // Mescla o modelo novo (anexos array) com o legado (comp e compUrl) caso ainda exista
+    const anexos = g.anexos && g.anexos.length > 0 ? g.anexos : (g.comp ? [{nome: g.comp, url: g.compUrl}] : []);
+    
+    return (
+      <div style={{padding:"14px 0",borderBottom:`1px solid ${C.border}`}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}>
+          <div style={{flex:1, paddingRight:10}}>
+            <p style={{fontSize:14,fontWeight:800,color:C.text}}>{g.desc}</p>
+            {e && <p style={{fontSize:11,fontWeight:700,color:C.primary,marginTop:2}}>{e.emoji} {e.nome}</p>}
+            {g.recebedor && <p style={{fontSize:11,color:C.muted,marginTop:2}}>Recebedor: <strong>{g.recebedor}</strong></p>}
           </div>
-          <SmBtn onClick={()=>{ if(viewGastos) { setViewGastos(null); setTimeout(()=>openEdit("gasto",{...g,etapaId:e.id},e.id),100); } else { openEdit("gasto",{...g,etapaId:e.id},e.id); } }} bg={C.bg}><Edit2 size={13} color={C.muted}/></SmBtn>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <div style={{textAlign:"right"}}>
+              <p style={{fontSize:15,fontWeight:800,color:C.text}}>{fmt(g.valor)}</p>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:4,marginTop:2}}>
+                <User size={10} color={C.muted}/>
+                <p style={{fontSize:10,color:C.muted,fontWeight:600}}>{g.pagador === 'G' ? "Gui pagou" : g.pagador === 'L' ? "Luan pagou" : "Dividido"}</p>
+              </div>
+            </div>
+            <SmBtn onClick={()=>{ if(viewGastos) { setViewGastos(null); setTimeout(()=>openEdit("gasto",{...g,etapaId:e.id},e.id),100); } else { openEdit("gasto",{...g,etapaId:e.id},e.id); } }} bg={C.bg}><Edit2 size={13} color={C.muted}/></SmBtn>
+          </div>
         </div>
+        {g.tags && (<div style={{display:"flex",gap:4,marginTop:6,flexWrap:"wrap"}}>{g.tags.split(',').map(t=> <Badge key={t} label={t.trim()} color={C.primary} bg={C.pLight}/>)}</div>)}
+        {g.obs && (<div style={{marginTop:8,background:C.wLight,padding:"8px 10px",borderRadius:8,border:`1px solid var(--warning)`, opacity:0.8}}><p style={{fontSize:11,color:C.text}}>💬 <strong>Obs:</strong> {g.obs}</p></div>)}
+        
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:10}}>
+          <p style={{fontSize:11,color:C.muted,fontWeight:600}}>Data: {g.data}</p>
+        </div>
+        
+        {/* Exibe todos os anexos com botão de download/abrir em nova guia */}
+        {anexos.length > 0 && (
+          <div style={{display:"flex",gap:6,marginTop:10,flexWrap:"wrap",justifyContent:"flex-end"}}>
+            {anexos.map((a, idx) => (
+               <button key={idx} onClick={(ev) => { ev.stopPropagation(); if(a.url) window.open(a.url, '_blank'); else alert("URL indisponível"); }} style={{display:"flex",alignItems:"center",gap:4,background:C.sLight,border:`1px solid var(--success)`, opacity:0.8, padding:"4px 10px",borderRadius:6,color:C.success,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                  <Download size={12}/> {a.nome}
+               </button>
+            ))}
+          </div>
+        )}
       </div>
-      {g.tags && (<div style={{display:"flex",gap:4,marginTop:6,flexWrap:"wrap"}}>{g.tags.split(',').map(t=> <Badge key={t} label={t.trim()} color={C.primary} bg={C.pLight}/>)}</div>)}
-      {g.obs && (<div style={{marginTop:8,background:C.wLight,padding:"8px 10px",borderRadius:8,border:`1px solid var(--warning)`, opacity:0.8}}><p style={{fontSize:11,color:C.text}}>💬 <strong>Obs:</strong> {g.obs}</p></div>)}
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:10}}>
-        <p style={{fontSize:11,color:C.muted,fontWeight:600}}>Data: {g.data}</p>
-        {g.comp && (<button style={{display:"flex",alignItems:"center",gap:4,background:C.sLight,border:`1px solid var(--success)`, opacity:0.8, padding:"4px 10px",borderRadius:6,color:C.success,fontSize:11,fontWeight:700,cursor:"pointer"}}><Download size={12}/> {g.comp}</button>)}
-      </div>
-    </div>
-  );
+    );
+  };
 
   const renderDash = () => (
     <div style={{padding:"0 16px 16px"}}>
@@ -1416,7 +1410,6 @@ export default function App() {
               );
             })}
             
-            {/* Outros Lançamentos */}
             <Card key={999} style={{marginBottom:8,padding:"12px 14px", border:`1px dashed ${C.border}`, background:C.bg}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
                 <p style={{fontSize:13,fontWeight:700,color:C.text}}>🧾 Outros Lançamentos</p>
@@ -1790,6 +1783,16 @@ export default function App() {
 
   const renderDocs = () => {
     const list = docTab === "contratos" ? contratos : projetos;
+    
+    // Filtro por termo (Título/Nome ou Tag)
+    const filteredList = list.filter(f => {
+       if (!searchDoc) return true;
+       const term = searchDoc.toLowerCase();
+       const titleMatch = (f.titulo || f.nome || "").toLowerCase().includes(term);
+       const tagMatch = (f.tags || "").toLowerCase().includes(term);
+       return titleMatch || tagMatch;
+    });
+
     return (
        <div style={{padding:"0 16px 16px"}}>
          <div style={{display:"flex", background:C.border, borderRadius:12, padding:4, marginBottom:16}}>
@@ -1797,29 +1800,54 @@ export default function App() {
            <button onClick={()=>setDocTab("projetos")} style={{flex:1, padding:8, borderRadius:8, border:"none", background:docTab==="projetos"?C.card:"transparent", color:docTab==="projetos"?C.primary:C.muted, fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:"inherit"}}>Projetos</button>
          </div>
 
+         <div style={{display:"flex",alignItems:"center",gap:10,background:C.card,borderRadius:12,padding:"10px 14px",marginBottom:14,border:`1px solid ${C.border}`,boxShadow:"0 1px 4px rgba(0,0,0,0.03)"}}>
+           <Search size={16} color={C.muted}/>
+           <input value={searchDoc} onChange={e=>setSearchDoc(e.target.value)} placeholder="Pesquisar por título ou tag..." style={{border:"none",outline:"none",fontSize:14,color:C.text,background:"transparent",flex:1,fontFamily:"inherit"}}/>
+           {searchDoc && <button onClick={()=>setSearchDoc("")} style={{background:"none",border:"none",padding:4,cursor:"pointer"}}><X size={16} color={C.muted}/></button>}
+         </div>
+
          <button onClick={()=>openAdd("doc",{data:todayFmt()})} style={{width:"100%",padding:14,borderRadius:12,border:`2px dashed var(--primary)`, opacity:0.8, background:"transparent",cursor:"pointer",color:C.primary,fontSize:14,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginBottom:16,fontFamily:"inherit"}}><Plus size={18}/> Novo {docTab==="contratos"?"contrato":"projeto"}</button>
 
          <div style={{display:"grid", gridTemplateColumns:"1fr", gap:10}}>
-           {list.map(f => (
-             <Card key={f.id} style={{padding:"12px 14px", borderLeft:docTab==="contratos"?`4px solid ${f.ok?C.success:C.warning}`:`4px solid ${C.secondary}`}}>
-                <div style={{display:"flex", alignItems:"center", gap:12}}>
-                   <div style={{width:42, height:42, borderRadius:10, background:C.bg, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0}}><FileText size={20} color={C.muted}/></div>
-                   <div style={{flex:1, paddingRight:10}}>
-                      <p style={{fontSize:14, fontWeight:800, color:C.text, marginBottom:4}}>{f.titulo || f.nome}</p>
-                      {f.titulo && <p style={{fontSize:11, color:C.muted, marginBottom:4}}>Arquivo: {f.nome}</p>}
-                      <p style={{fontSize:11, color:C.muted}}>Enviado em {f.data} • {f.comp || f.tam}</p>
-                   </div>
-                   <div style={{display:"flex", gap:6, alignItems:"center"}}>
-                      {docTab==="contratos" && (
-                         <button onClick={()=>toggleSigned(f.id)} style={{background:"none", border:"none", cursor:"pointer", padding:4}} title={f.ok?"Assinado":"Pendente"}>{f.ok?<CheckSquare size={18} color={C.success}/>:<Square size={18} color={C.muted}/>}</button>
-                      )}
-                      <SmBtn onClick={()=>downloadDoc(f)} bg={C.bg}><Download size={15} color={C.primary}/></SmBtn>
-                      <SmBtn onClick={()=>openEdit("doc",f)} bg={C.bg}><Edit2 size={13} color={C.muted}/></SmBtn>
-                   </div>
-                </div>
-             </Card>
-           ))}
-           {list.length === 0 && <p style={{textAlign:"center", color:C.muted, margin:"20px 0"}}>Nenhum documento anexado.</p>}
+           {filteredList.map(f => {
+              // Prepara anexos do modelo novo ou fallback do modelo legado
+              const anexos = f.anexos && f.anexos.length > 0 ? f.anexos : (f.nome ? [{nome: f.nome, url: f.url, tam: f.tam, comp: f.comp}] : []);
+              
+              return (
+                 <Card key={f.id} style={{padding:"12px 14px", borderLeft:docTab==="contratos"?`4px solid ${f.ok?C.success:C.warning}`:`4px solid ${C.secondary}`}}>
+                    <div style={{display:"flex", alignItems:"flex-start", gap:12}}>
+                       <div style={{width:42, height:42, borderRadius:10, background:C.bg, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0}}><FileText size={20} color={C.muted}/></div>
+                       <div style={{flex:1, paddingRight:10}}>
+                          <p style={{fontSize:14, fontWeight:800, color:C.text, marginBottom:4}}>{f.titulo || f.nome}</p>
+                          {f.tags && (<div style={{display:"flex",gap:4,marginBottom:6,flexWrap:"wrap"}}>{f.tags.split(',').map(t=> <Badge key={t} label={t.trim()} color={C.secondary} bg={`${C.secondary}15`}/>)}</div>)}
+                          <p style={{fontSize:11, color:C.muted, marginBottom:4}}>Enviado em {f.data}</p>
+                          
+                          {anexos.length > 0 && (
+                             <div style={{marginTop:8, display:"flex", flexDirection:"column", gap:6}}>
+                                {anexos.map((a, idx) => (
+                                   <div key={idx} style={{display:"flex", alignItems:"center", justifyContent:"space-between", background:C.bg, padding:"6px 10px", borderRadius:6, border:`1px solid ${C.border}`}}>
+                                      <div style={{display:"flex", alignItems:"center", gap:6, overflow:"hidden"}}>
+                                        <FileText size={12} color={C.muted}/>
+                                        <span style={{fontSize:11, color:C.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"}}>{a.nome}</span>
+                                        <span style={{fontSize:9, color:C.muted}}>({a.comp || a.tam})</span>
+                                      </div>
+                                      <SmBtn onClick={() => window.open(a.url, '_blank')} bg="transparent"><Download size={14} color={C.primary}/></SmBtn>
+                                   </div>
+                                ))}
+                             </div>
+                          )}
+                       </div>
+                       <div style={{display:"flex", gap:6, alignItems:"flex-start"}}>
+                          {docTab==="contratos" && (
+                             <button onClick={()=>toggleSigned(f.id)} style={{background:"none", border:"none", cursor:"pointer", padding:4}} title={f.ok?"Assinado":"Pendente"}>{f.ok?<CheckSquare size={18} color={C.success}/>:<Square size={18} color={C.muted}/>}</button>
+                          )}
+                          <SmBtn onClick={()=>openEdit("doc",f)} bg={C.bg}><Edit2 size={13} color={C.muted}/></SmBtn>
+                       </div>
+                    </div>
+                 </Card>
+              );
+           })}
+           {filteredList.length === 0 && <p style={{textAlign:"center", color:C.muted, margin:"20px 0"}}>Nenhum documento encontrado.</p>}
          </div>
        </div>
     );
@@ -1927,7 +1955,7 @@ export default function App() {
       {maisTab==="ideias"    && renderIdeias()}
 
       <div style={{padding:16, borderTop:`1px solid ${C.border}`, marginTop:20}}>
-        {/* Google Drive já está configurado automaticamente */}
+        {/* Google Drive já está configurado automaticamente e silencioso em background */}
       </div>
     </div>
   );
