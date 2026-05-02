@@ -298,7 +298,7 @@ export default function App() {
   const [searchGasto, setSearchGasto] = useState("");
   const [searchIdeia, setSearchIdeia] = useState("");
   const [searchAnotacao, setSearchAnotacao] = useState("");
-  const [searchDoc,   setSearchDoc]   = useState(""); // Novo buscador de documentos
+  const [searchDoc,   setSearchDoc]   = useState(""); 
   const [catFiltro,   setCatFiltro]   = useState("Todas");
   const [openEtapaId, setOpenEtapaId] = useState(null);
   const [showConcluidas, setShowConcluidas] = useState(false);
@@ -370,7 +370,7 @@ export default function App() {
   /* ─── MODAL HELPERS ─── */
   const openAdd  = (type, defaults={}, parentId=null) => {
     const data = {...defaults};
-    if (type === "gasto" || type === "doc") data.anexos = [];
+    if (type === "gasto" || type === "doc" || type === "ideia") data.anexos = [];
     setModal({type, data, parentId, editing:false});
   };
   const openEdit = (type, item, parentId=null) => {
@@ -382,6 +382,9 @@ export default function App() {
     if (type === "doc" && !data.anexos) {
       data.anexos = data.nome ? [{nome: data.nome, url: data.url, driveId: data.driveId, tam: data.tam, comp: data.comp}] : [];
       data.titulo = data.titulo || data.nome;
+    }
+    if (type === "ideia" && !data.anexos) {
+      data.anexos = [];
     }
     setModal({type, data, parentId, editing:true});
   };
@@ -526,31 +529,87 @@ export default function App() {
     }, 50);
   };
 
+  const handleIdeiaFile = async (e) => {
+    const files = Array.from(e.target.files);
+    if (!files.length) return;
+
+    const maxSize = 100 * 1024 * 1024;
+    for (let file of files) {
+      if (file.size > maxSize) return alert(`O arquivo ${file.name} é muito grande. Máximo de 100MB por arquivo.`);
+    }
+
+    setIsUploading(true);
+    window.setTimeout(async () => {
+      try {
+        await drive.preAuthenticateIfNeeded();
+        const novosAnexos = [];
+        for (let file of files) {
+          const res = await uploadToStorage(file, "ideias"); 
+          novosAnexos.push({ nome: res.name, url: res.url, driveId: res.id });
+        }
+        setF("anexos", [...(d.anexos || []), ...novosAnexos]);
+      } catch (err) {
+        const errorMsg = err.message?.includes('autenticação') || err.message?.includes('token')
+          ? "Erro de autenticação. Recarregue a página e tente novamente."
+          : `Erro no upload: ${err.message}`;
+        alert(errorMsg);
+      } finally {
+        setIsUploading(false);
+      }
+    }, 50);
+  };
+
   const [showAllPayments, setShowAllPayments] = useState(false);
 
   const saveGasto = async () => {
     if(!d.desc?.trim()||!d.valor) return alert("Descrição e valor são obrigatórios");
     const etId = parseInt(d.etapaId);
+    
+    // modal.parentId armazena a etapa original caso o gasto esteja sendo editado
+    const oldEtId = modal.editing ? parseInt(modal.parentId) : null;
+
     let v = parseFloat(d.valor)||0, pagador = d.pagador || 'G', vG = 0, vL = 0;
     if(pagador === 'G') vG = v; else if(pagador === 'L') vL = v; else { vG = parseFloat(d.valorG)||(v/2); vL = parseFloat(d.valorL)||(v/2); v = vG + vL; }
     
-    // Remove as referências únicas para manter a limpeza dos dados (retrocompatibilidade já é lida e convertida para 'anexos')
+    // Removemos os campos duplicados legados já que agora trabalhamos 100% com o array anexos
     const g = { id:d.id||uid(), desc:d.desc, valor:v, valorG:vG, valorL:vL, pagador, data:d.data||today(), recebedor:d.recebedor||"", tags:d.tags||"", obs:d.obs||"", anexos:d.anexos||[] };
     
+    // Se estiver editando e o usuário mudou a etapa do Gasto: devemos deletar da etapa antiga primeiro
+    if (modal.editing && oldEtId !== etId) {
+       if (oldEtId === 999) {
+          await deleteDoc(doc(db, "outrosGastos", g.id.toString()));
+       } else {
+          const oldE = etapas.find(x => x.id.toString() === oldEtId.toString());
+          if (oldE) {
+             const gastosLimpos = oldE.gastos.filter(x => x.id.toString() !== g.id.toString());
+             await setDoc(doc(db, "etapas", oldE.id.toString()), {...oldE, gastos: gastosLimpos});
+          }
+       }
+    }
+
+    // Salva ou Atualiza o gasto na etapa Nova/Atual
     if (etId === 999) {
       await setDoc(doc(db, "outrosGastos", g.id.toString()), g);
     } else {
       const e = etapas.find(x => x.id.toString() === etId.toString());
       if(e) {
-         const novosGastos = modal.editing ? e.gastos.map(x => x.id.toString()===g.id.toString() ? g : x) : [...e.gastos, g];
+         let novosGastos;
+         if (modal.editing && oldEtId === etId) {
+            // Apenas atualiza o item caso ele já estivesse nessa mesma etapa
+            novosGastos = e.gastos.map(x => x.id.toString()===g.id.toString() ? g : x);
+         } else {
+            // É um novo item OU ele acabou de ser movido para cá
+            novosGastos = [...e.gastos, g];
+         }
          await setDoc(doc(db, "etapas", e.id.toString()), {...e, gastos: novosGastos});
       }
     }
+    
     logChange(modal.editing ? `Editou o gasto "${g.desc}"` : `Lançou o gasto "${g.desc}"`); closeModal();
   };
   
   const deleteGasto = async () => { 
-    const confirmacao = window.confirm(`Tem certeza que deseja excluir o gasto "${d.desc}"?\n\nEsta ação não pode ser desfeita e também removerá os comprovantes anexos do Google Drive.`);
+    const confirmacao = window.confirm(`Tem certeza que deseja excluir o gasto "${d.desc}"?\n\nEsta ação não pode ser desfeita${d.anexos?.length ? ' e também removerá os comprovantes anexos do Google Drive.' : '.'}`);
     
     if (!confirmacao) return;
     
@@ -609,7 +668,7 @@ export default function App() {
   };
 
   const excluirDocumento = async () => { 
-    const confirmacao = window.confirm(`Tem certeza que deseja excluir o documento "${d.titulo || d.nome}"?\n\nEsta ação não pode ser desfeita e também removerá os arquivos anexos do Google Drive.`);
+    const confirmacao = window.confirm(`Tem certeza que deseja excluir o documento "${d.titulo || d.nome}"?\n\nEsta ação não pode ser desfeita${d.anexos?.length ? ' e também removerá os arquivos anexos do Google Drive.' : '.'}`);
     
     if (!confirmacao) return;
     
@@ -698,12 +757,29 @@ export default function App() {
     if(!d.t?.trim()) return alert("Título é obrigatório");
     const safeCats = ideiaCats || [];
     const catFinal = d.cat || (safeCats.find(c=>c.ativa)?.nome || "Outros");
-    const item = {...d, cor:d.cor||IDEIA_COLS[0], data:d.data||todayFmt(), tags:d.tags||[], links:d.links||[], cat:catFinal};
+    const item = {...d, cor:d.cor||IDEIA_COLS[0], data:d.data||todayFmt(), tags:d.tags||[], links:d.links||[], cat:catFinal, anexos:d.anexos||[]};
     if(!modal.editing) item.id = uid();
     await setDoc(doc(db, "ideias", item.id.toString()), item);
     logChange(modal.editing ? `Editou a ideia "${item.t}"` : `Adicionou a ideia "${item.t}"`); closeModal();
   };
-  const deleteIdeia = async () => { await deleteDoc(doc(db, "ideias", d.id.toString())); logChange(`Excluiu a ideia "${d.t}"`); closeModal(); };
+  
+  const deleteIdeia = async () => { 
+    const confirmacao = window.confirm(`Tem certeza que deseja excluir a ideia "${d.t}"?\n\nEsta ação não pode ser desfeita${d.anexos?.length ? ' e também removerá os arquivos anexos do Google Drive.' : '.'}`);
+    if (!confirmacao) return;
+    try {
+       if (d.anexos && d.anexos.length > 0) {
+         for (const a of d.anexos) {
+            if (a.driveId) await drive.deleteFile(a.driveId);
+         }
+       }
+       await deleteDoc(doc(db, "ideias", d.id.toString())); 
+       logChange(`Excluiu a ideia "${d.t}"`); 
+       closeModal(); 
+    } catch(error) {
+       console.error(`[Exclusão] Erro ao excluir ideia:`, error);
+       alert(`Erro ao excluir ideia: ${error.message}`);
+    }
+  };
 
   /* ─── EXPORTAR COTAÇÃO ─── */
   const cotacaoExportRef = useRef(null);
@@ -1026,6 +1102,26 @@ export default function App() {
               <button onClick={addNewTag} style={{padding:"6px 12px",borderRadius:20,border:`1.5px dashed ${C.primary}`,background:"transparent",color:C.primary,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>+ Nova Tag</button>
             </div>
           </div>
+          
+          <div style={{marginBottom:14}}>
+             <p style={{fontSize:12,fontWeight:700,color:C.muted,marginBottom:6}}>Imagens e Anexos</p>
+             {(d.anexos||[]).map((anexo, idx) => (
+                <div key={idx} style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:C.sLight,padding:"10px 14px",borderRadius:10,marginBottom:6}}>
+                  <div style={{display:"flex",alignItems:"center",gap:6, overflow:"hidden"}}>
+                     <FileText size={16} color={C.success} style={{flexShrink:0}}/>
+                     <p style={{fontSize:13,color:C.success,fontWeight:700, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"}}>{anexo.nome}</p>
+                  </div>
+                  <button onClick={() => setF("anexos", d.anexos.filter((_, i) => i !== idx))} style={{background:"none",border:"none",color:C.danger,fontWeight:700,cursor:"pointer",flexShrink:0,marginLeft:8}}>Remover</button>
+                </div>
+             ))}
+
+             <input type="file" id="ideia-upload" multiple style={{display:"none"}} onChange={handleIdeiaFile} />
+             <label htmlFor="ideia-upload" style={{width:"100%",padding:12,borderRadius:10,border:`1.5px dashed ${C.border}`,background:C.bg,color:C.text,fontSize:14,fontWeight:600,cursor:"pointer",display:isUploading?"none":"flex",alignItems:"center",justifyContent:"center",gap:8,fontFamily:"inherit"}}>
+               <Upload size={16}/> {isUploading ? "Enviando..." : "Anexar Imagem ou Arquivo"}
+             </label>
+             {isUploading && <p style={{fontSize:12, color:C.primary, textAlign:"center", marginTop:4}}>Enviando arquivo(s)...</p>}
+          </div>
+
           <div style={{marginBottom:14}}>
             <p style={{fontSize:12,fontWeight:700,color:C.muted,marginBottom:8}}>Links de Referência</p>
             <div style={{display:"flex",flexDirection:"column",gap:8}}>
@@ -1784,7 +1880,6 @@ export default function App() {
   const renderDocs = () => {
     const list = docTab === "contratos" ? contratos : projetos;
     
-    // Filtro por termo (Título/Nome ou Tag)
     const filteredList = list.filter(f => {
        if (!searchDoc) return true;
        const term = searchDoc.toLowerCase();
@@ -1810,7 +1905,6 @@ export default function App() {
 
          <div style={{display:"grid", gridTemplateColumns:"1fr", gap:10}}>
            {filteredList.map(f => {
-              // Prepara anexos do modelo novo ou fallback do modelo legado
               const anexos = f.anexos && f.anexos.length > 0 ? f.anexos : (f.nome ? [{nome: f.nome, url: f.url, tam: f.tam, comp: f.comp}] : []);
               
               return (
@@ -1926,6 +2020,15 @@ export default function App() {
               <div style={{flex:1}}/>
               {i.tags && i.tags.length > 0 && (<div style={{display:"flex",flexWrap:"wrap",gap:4,marginBottom:8}}>{i.tags.map(tg=>(<span key={tg} style={{fontSize:10,fontWeight:700,color:C.text,background:"var(--bg)",borderRadius:8,padding:"2px 8px", opacity:0.8}}>{tg}</span>))}</div>)}
               {i.links && i.links.length > 0 && (<div style={{display:"flex",flexDirection:"column",gap:4,marginBottom:8}}>{i.links.map((lk, idx)=>(<a key={idx} href={lk.startsWith('http')?lk:`https://${lk}`} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} style={{fontSize:11,color:C.secondary,fontWeight:800,textDecoration:"none",display:"flex",alignItems:"center",gap:4,background:"var(--bg)", opacity:0.8, padding:"4px 8px",borderRadius:6}}><ExternalLink size={12}/> Link {idx+1}</a>))}</div>)}
+              {i.anexos && i.anexos.length > 0 && (
+                <div style={{display:"flex",flexDirection:"column",gap:4,marginBottom:8}}>
+                  {i.anexos.map((a, idx)=>(
+                    <a key={idx} href={a.url} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} style={{fontSize:11,color:C.success,fontWeight:800,textDecoration:"none",display:"flex",alignItems:"center",gap:4,background:"var(--bg)", opacity:0.8, padding:"4px 8px",borderRadius:6}}>
+                      <Download size={12}/> Anexo
+                    </a>
+                  ))}
+                </div>
+              )}
               <p style={{fontSize:10,color:C.muted,marginTop:4}}>{i.data}</p>
             </div>
           ))}
